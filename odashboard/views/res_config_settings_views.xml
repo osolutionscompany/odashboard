@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="res_config_settings_view_form_odashboard"
+                model="ir.ui.view">
+            <field name="name">
+                res.config.settings.view.form.inherit.odashboard
+            </field>
+            <field name="model">res.config.settings</field>
+            <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//form" position="inside">
+                    <field name="is_root_company" invisible="1"/>
+                    <app data-string="Odashboard"
+                         string="Odashboard" name="odashboard"
+                         logo="/odashboard/static/description/icon.png">
+
+                        <div id="odashboard_key">
+                            <block title="License"
+                                   name="odashboard_key_container">
+                                <div class="row mt16 o_settings_container"
+                                     id="odashboard_settings">
+                                    <div class="col-12 col-lg-6 o_setting_box"
+                                         id="odashboard_key">
+                                        <div class="o_setting_left_pane"/>
+                                        <div class="o_setting_right_pane">
+                                            <span class="o_form_label">key
+                                            </span>
+                                            <div class="text-muted">Enter your
+                                                Odashboard license key here
+                                            </div>
+                                            <field name="odashboard_key"
+                                                   placeholder="Enter your key"
+                                                   readonly="odashboard_key_synchronized"
+                                                   class="oe_input_key"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-lg-6 o_setting_box"
+                                         id="odashboard_actions">
+                                        <div class="o_setting_left_pane"/>
+                                        <div class="o_setting_right_pane">
+                                            <span class="o_form_label">Actions
+                                            </span>
+                                            <div class="text-muted">Synchronize
+                                                or
+                                                desynchronize your key
+                                            </div>
+                                            <button name="synchronize_key"
+                                                    string="Synchronize key"
+                                                    type="object"
+                                                    class="btn btn-primary"
+                                                    invisible="odashboard_key_synchronized"/>
+                                            <button name="desynchronize_key"
+                                                    string="Desynchronize key"
+                                                    type="object"
+                                                    class="btn btn-secondary"
+                                                    invisible="not odashboard_key_synchronized"/>
+                                            <div class="mt8"
+                                                 invisible="not odashboard_key_synchronized">
+                                                <span class="fa fa-check text-success"/>
+                                                key is synchronized
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-lg-6 o_setting_box"
+                                         id="odashboard_uuid">
+                                        <div class="o_setting_left_pane"/>
+                                        <div class="o_setting_right_pane">
+                                            <span class="o_form_label">Instance
+                                                UUID
+                                            </span>
+                                            <div class="text-muted">Unique
+                                                identifier
+                                                for this Odoo instance (for
+                                                support)
+                                            </div>
+                                            <field name="odashboard_uuid"
+                                                   readonly="1"
+                                                   class="oe_input_uuid"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </block>
+                        </div>
+                    </app>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>

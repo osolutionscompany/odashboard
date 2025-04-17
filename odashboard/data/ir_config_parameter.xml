@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="odashboard_api_endpoint" model="ir.config_parameter">
+            <field name="key">odashboard.api.endpoint</field>
+            <field name="value">https://api.odashboard.app</field>
+        </record>
+    </data>
+</odoo>

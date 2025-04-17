@@ -1,0 +1,212 @@
+from odoo import models, fields, api
+import requests
+import uuid
+import json
+import logging
+
+_logger = logging.getLogger(__name__)
+
+
+class ResConfigSettings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    odashboard_key = fields.Char(string="Odashboard Key", config_parameter="odashboard.key")
+    odashboard_key_synchronized = fields.Boolean(string="Key Synchronized",
+                                                 config_parameter="odashboard.key_synchronized", readonly=True)
+    odashboard_uuid = fields.Char(string="Instance UUID", config_parameter="odashboard.uuid", readonly=True)
+
+    def set_values(self):
+        super(ResConfigSettings, self).set_values()
+
+    @api.model
+    def get_values(self):
+        res = super(ResConfigSettings, self).get_values()
+        # Récupérer ou générer l'UUID
+        uuid_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
+        if not uuid_param:
+            uuid_param = str(uuid.uuid4())
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.uuid', uuid_param)
+        res.update(
+            odashboard_uuid=uuid_param,
+        )
+        return res
+
+    def synchronize_key(self):
+        """Synchronize the key with the license server"""
+        if not self.odashboard_key:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Error',
+                    'message': 'Please enter a key before synchronizing',
+                    'type': 'danger',
+                    'sticky': False,
+                }
+            }
+
+        # Get the license API endpoint from config parameters
+        api_endpoint = self.env['ir.config_parameter'].sudo().get_param('odashboard.api.endpoint',
+                                                                        'https://odashboard.app')
+
+        # Verify key with external platform
+        try:
+            response = requests.post(
+                f"{api_endpoint}/api/odashboard/license/verify",
+                json={
+                    'key': self.odashboard_key,
+                    'uuid': self.odashboard_uuid
+                },
+            )
+
+            if response.status_code == 200:
+                result = response.json().get('result')
+
+                if result.get('valid'):
+                    if result.get('already_linked') and result.get('linked_uuid') != self.odashboard_uuid:
+                        return {
+                            'type': 'ir.actions.client',
+                            'tag': 'display_notification',
+                            'params': {
+                                'title': 'Error',
+                                'message': 'Key already used.',
+                                'type': 'danger',
+                                'sticky': False,
+                            }
+                        }
+                    else:
+                        self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', True)
+                        return {
+                            'type': 'ir.actions.act_window',
+                            'res_model': 'res.config.settings',
+                            'view_mode': 'form',
+                            'view_type': 'form',
+                            'target': 'inline',
+                            'context': {'active_test': False},
+                            'flags': {'form': {'action_buttons': True}},
+                            'notification': {
+                                'title': 'Success',
+                                'message': 'Key successfully synchronized',
+                                'type': 'success',
+                                'sticky': False,
+                            }
+                        }
+                else:
+                    return {
+                        'type': 'ir.actions.client',
+                        'tag': 'display_notification',
+                        'params': {
+                            'title': 'Error',
+                            'message': result.get('error', 'Invalid key'),
+                            'type': 'danger',
+                            'sticky': False,
+                        }
+                    }
+            else:
+                return {
+                    'type': 'ir.actions.client',
+                    'tag': 'display_notification',
+                    'params': {
+                        'title': 'Error',
+                        'message': 'Error verifying key',
+                        'type': 'danger',
+                        'sticky': False,
+                    }
+                }
+        except requests.exceptions.RequestException as e:
+            _logger.error("Connection error when verifying license key: %s", str(e))
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Error',
+                    'message': 'Connection error when verifying license key',
+                    'type': 'danger',
+                    'sticky': False,
+                }
+            }
+
+    def desynchronize_key(self):
+        """De-synchronize the key from the license server"""
+        # Check if key is synchronized
+        is_synchronized = bool(self.env['ir.config_parameter'].sudo().get_param('odashboard.key_synchronized', 'False'))
+
+        if not is_synchronized:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Warning',
+                    'message': 'key is not synchronized',
+                    'type': 'warning',
+                    'sticky': False,
+                }
+            }
+
+        key = self.env['ir.config_parameter'].sudo().get_param('odashboard.key')
+        uuid_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
+
+        # Get the license API endpoint from config parameters
+        api_endpoint = self.env['ir.config_parameter'].sudo().get_param('odashboard.api.endpoint',
+                                                                        'https://odashboard.app')
+
+        # Notify the license server about desynchronization
+        try:
+            requests.post(
+                f"{api_endpoint}/api/odashboard/license/unlink",
+                json={
+                    'key': key,
+                    'uuid': uuid_param
+                },
+                timeout=10
+            )
+
+            # Regardless of the server response, we desynchronize locally
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', False)
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.key', '')
+
+            # Update the current record
+            self.odashboard_key = ''
+            self.odashboard_key_synchronized = False
+
+            return {
+                'type': 'ir.actions.act_window',
+                'res_model': 'res.config.settings',
+                'view_mode': 'form',
+                'view_type': 'form',
+                'target': 'inline',
+                'context': {'active_test': False},
+                'flags': {'form': {'action_buttons': True}},
+                'notification': {
+                    'title': 'Success',
+                    'message': 'key successfully desynchronized',
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+        except Exception as e:
+            _logger.error("Error during key desynchronization: %s", str(e))
+            # Even if the server request fails, we desynchronize locally
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', False)
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.key', '')
+
+            # Update the current record
+            self.odashboard_key = ''
+            self.odashboard_key_synchronized = False
+
+
+            return {
+                'type': 'ir.actions.act_window',
+                'res_model': 'res.config.settings',
+                'view_mode': 'form',
+                'view_type': 'form',
+                'target': 'inline',
+                'context': {'active_test': False},
+                'flags': {'form': {'action_buttons': True}},
+                'notification': {
+                    'title': 'Warning',
+                    'message': 'Error during key desynchronization, desynchronized locally',
+                    'type': 'warning',
+                    'sticky': False,
+                }
+            }
