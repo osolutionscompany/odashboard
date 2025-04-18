@@ -21,7 +21,7 @@ class OdashAPI(http.Controller):
     Controller for Odashboard API endpoints
     """
     
-    @http.route(['/api/get/models'], type='http', auth='public', csrf=False, methods=['GET'], cors="*")
+    @http.route(['/api/get/models'], type='http', auth='none', csrf=False, methods=['GET'], cors="*")
     def get_models(self, **kw):
         """
         Return a list of models relevant for analytics, automatically filtering out technical models
@@ -106,7 +106,7 @@ class OdashAPI(http.Controller):
             )
             return response
 
-    @http.route(['/api/get/dashboard'], type='http', auth='public', csrf=False, methods=['POST'], cors="*")
+    @http.route(['/api/get/dashboard'], type='http', auth='none', csrf=False, methods=['POST'], cors="*")
     def get_visualization_data(self, **kw):
         """
         Process the dashboard configuration and return data in the required format
@@ -619,7 +619,7 @@ class OdashAPI(http.Controller):
             _logger.error("Error in API get_visualization_data: %s", str(e))
             return self._build_response({'success': False, 'error': str(e)}, status=500)
 
-    @http.route(['/api/get/model_fields/<string:model_name>'], type='http', auth='public', csrf=False, methods=['GET'], cors="*")
+    @http.route(['/api/get/model_fields/<string:model_name>'], type='http', auth='none', csrf=False, methods=['GET'], cors="*")
     def get_model_fields(self, model_name, **kw):
         """
         Retrieve information about the fields of a specific Odoo model.
