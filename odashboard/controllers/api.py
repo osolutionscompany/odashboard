@@ -1,3 +1,5 @@
+from .api_helper import ApiHelper
+
 from odoo import http
 from odoo.http import request, Response
 import json
@@ -46,7 +48,7 @@ class OdashAPI(http.Controller):
             domain.append(('model', 'not like', '\\_%'))
             
             # 3. Include only analytical models using OR conditions with LIKE
-            analytical_domain = ['|'] * (13 - 1)  # 13 patterns minus 1
+            analytical_domain = ['|'] * (14 - 1)  # 13 patterns minus 1
             analytical_domain += [
                 ('model', 'like', 'sale.%'),
                 ('model', 'like', 'account.%'),
@@ -61,6 +63,7 @@ class OdashAPI(http.Controller):
                 ('model', 'like', 'website_sale.%'),
                 ('model', 'like', 'event.%'),
                 ('model', 'like', 'marketing.%'),
+                ('model', 'like', 'res.%'),
             ]
             
             # Combine all conditions
@@ -78,20 +81,7 @@ class OdashAPI(http.Controller):
                 'model': model.model,
             } for model in models]
             
-            # Format the response
-            response_data = {
-                'success': True,
-                'count': len(model_list),
-                'models': model_list
-            }
-            
-            # Create and return the response
-            response = Response(
-                json.dumps(response_data, cls=OdashboardJSONEncoder),
-                content_type='application/json',
-                status=200
-            )
-            return response
+            return ApiHelper.json_valid_response(model_list, 200)
             
         except Exception as e:
             _logger.error("Error in API get_models: %s", str(e))
@@ -638,14 +628,7 @@ class OdashAPI(http.Controller):
             model_obj = request.env[model_name].sudo()
             fields_info = self._get_fields_info(model_obj)
             
-            # Create the response
-            response_data = {
-                'success': True,
-                'model': model_name,
-                'fields': fields_info
-            }
-            
-            return self._build_response(response_data)
+            return ApiHelper.json_valid_response(fields_info, 200)
             
         except Exception as e:
             _logger.error("Error in API get_model_fields: %s", str(e))
@@ -761,11 +744,7 @@ class OdashAPI(http.Controller):
         else:
             response_data = data
             
-        return Response(
-            json.dumps(response_data, cls=OdashboardJSONEncoder),
-            content_type='application/json',
-            status=status
-        )
+        return ApiHelper.json_valid_response(response_data, status)
     
     def _prepare_visualization_metadata(self, model_name, config_id):
         """
