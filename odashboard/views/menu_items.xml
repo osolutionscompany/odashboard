@@ -1,0 +1,6 @@
+<odoo>
+    <data>
+        <menuitem name="Dashboards" groups="base.group_user" id="menu_odash_dashboard_root" web_icon="odashboard,static/description/icon.png"/>
+        <menuitem name="Dashboard" id="menu_odash_dashboard_dashboard" parent="odashboard.menu_odash_dashboard_root" action="action_odash_dashboard" sequence="10"/>
+    </data>
+</odoo>

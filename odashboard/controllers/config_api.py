@@ -19,7 +19,7 @@ class OdashConfigAPI(http.Controller):
 
     # ---- Page Configurations ----
 
-    @http.route('/api/odash/pages', type='http', auth='none', methods=['GET', 'POST'], csrf=False, cors="*")
+    @http.route('/api/odash/pages', type='http', auth='api_key_dashboard', methods=['GET', 'POST'], csrf=False, cors="*")
     def pages_collection(self, **kw):
         """
         Handle page configurations collection
@@ -63,7 +63,7 @@ class OdashConfigAPI(http.Controller):
             _logger.error(f"Error {operation} page configs: {e}")
             return ApiHelper.json_error_response(e, 500)
 
-    @http.route('/api/odash/pages/<string:config_id>', type='http', auth='none', methods=['GET', 'PUT', 'DELETE'], csrf=False, cors="*")
+    @http.route('/api/odash/pages/<string:config_id>', type='http', auth='api_key_dashboard', methods=['GET', 'PUT', 'DELETE'], csrf=False, cors="*")
     def page_resource(self, config_id, **kw):
         """
         Handle individual page configuration
@@ -116,7 +116,7 @@ class OdashConfigAPI(http.Controller):
 
     # ---- Data Configurations ----
 
-    @http.route('/api/odash/data', type='http', auth='none', methods=['GET', 'POST'], csrf=False, cors="*")
+    @http.route('/api/odash/data', type='http', auth='api_key_dashboard', methods=['GET', 'POST'], csrf=False, cors="*")
     def data_collection(self, **kw):
         """
         Handle data configurations collection
@@ -159,7 +159,7 @@ class OdashConfigAPI(http.Controller):
             _logger.error(f"Error {operation} data configs: {e}")
             return ApiHelper.json_error_response(e, 500)
 
-    @http.route('/api/odash/data/<string:config_id>', type='http', auth='none', methods=['GET', 'PUT', 'DELETE'], csrf=False, cors="*")
+    @http.route('/api/odash/data/<string:config_id>', type='http', auth='api_key_dashboard', methods=['GET', 'PUT', 'DELETE'], csrf=False, cors="*")
     def data_resource(self, config_id, **kw):
         """
         Handle individual data configuration

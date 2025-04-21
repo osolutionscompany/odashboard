@@ -20,7 +20,15 @@
 
         # Views
         'views/res_config_settings_views.xml',
+        'views/dashboard_views.xml',
+        'views/menu_items.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'odashboard/static/src/js/odash_iframe_widget.js',
+            'odashboard/static/src/xml/odash_iframe_widget.xml'
+        ],
+    },
     'application': False,
     'installable': True,
     'auto_install': False,
