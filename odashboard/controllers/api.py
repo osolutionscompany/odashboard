@@ -27,8 +27,17 @@ class OdashAPI(http.Controller):
 
     @http.route(['/api/odash/access'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
     def get_access(self, **kw):
-        token = requests.get("http://localhost:8080/api/odash/access")
-        return ApiHelper.json_valid_response(token.json(), 200)
+        token = request.env['ir.config_parameter'].sudo().get_param('odashboard.api.token')
+        return ApiHelper.json_valid_response(token, 200)
+
+    @http.route(['/api/osolution/refresh-token/<string:uuid>/<string:key>'], type='http', auth='none', csrf=False, methods=['GET'], cors="*")
+    def refresh_token(self, uuid, key, **kw):
+        uuid_param = request.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
+        key_param = request.env['ir.config_parameter'].sudo().get_param('odashboard.key')
+
+        if uuid_param == uuid and key_param == key:
+            request.env["odash.dashboard"].sudo().update_auth_token()
+        return ApiHelper.json_valid_response("ok", 200)
     
     @http.route(['/api/get/models'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
     def get_models(self, **kw):

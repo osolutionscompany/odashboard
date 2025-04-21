@@ -12,11 +12,12 @@
         'web',
     ],
     'data': [
-        # Data
-        'data/ir_config_parameter.xml',
-
         # Security
         'security/ir.model.access.csv',
+
+        # Data
+        'data/ir_config_parameter.xml',
+        'data/ir_cron.xml',
 
         # Views
         'views/res_config_settings_views.xml',

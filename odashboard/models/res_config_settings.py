@@ -55,7 +55,8 @@ class ResConfigSettings(models.TransientModel):
                 f"{api_endpoint}/api/odashboard/license/verify",
                 json={
                     'key': self.odashboard_key,
-                    'uuid': self.odashboard_uuid
+                    'uuid': self.odashboard_uuid,
+                    'url': self.env['ir.config_parameter'].sudo().get_param('web.base.url')
                 },
             )
 

@@ -2,6 +2,7 @@ import urllib.parse
 import string
 import random
 import uuid
+import requests
 
 from odoo import models, fields, api
 
@@ -21,6 +22,16 @@ class Dashboard(models.Model):
     connection_url = fields.Char(string="URL")
     token = fields.Char(string="Token")
     config = fields.Json(string="Config")
+
+    @api.model
+    def update_auth_token(self):
+        uuid_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
+        key_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.key')
+        api_endpoint = self.env['ir.config_parameter'].sudo().get_param('odashboard.api.endpoint')
+        token = requests.get(f"{api_endpoint}/api/odash/access/{uuid_param}/{key_param}")
+        if token.status_code == 200:
+            token = token.json()
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.api.token', token)
 
     def get_dashboard_for_user(self):
         user_id = self.env.user.id
@@ -47,6 +58,7 @@ class Dashboard(models.Model):
         base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
         new_token = generate_random_string(64) if not self.token else self.token
         new_connection_url = f"http://localhost:5173?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}"
+        print(new_connection_url)
         self.write({
             "token": new_token,
             "connection_url": new_connection_url,
