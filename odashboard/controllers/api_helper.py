@@ -1,9 +1,12 @@
 import json
 import re
 
+from datetime import datetime, date
+from typing import Optional, Dict
+
 from odoo import _, models
 from odoo.http import Response, request
-from typing import Optional, Dict
+
 
 
 class ApiHelper:
@@ -13,10 +16,16 @@ class ApiHelper:
         """
         Return a JsonResponse with the given data and status code if code is valid or no exceptions.
         """
+        def default_converter(o):
+            if isinstance(o, (datetime, date)):
+                return o.isoformat()
+            return str(o)
+
         headers = {
             'Content-Type': 'application/json'
         }
-        return Response(json.dumps(data), status=str(valid_code), headers=headers)
+
+        return Response(json.dumps(data, default=default_converter), status=str(valid_code), headers=headers)
 
     @staticmethod
     def json_error_response(error: any, error_code: Optional[int] = 400) -> Dict[str, any]:
