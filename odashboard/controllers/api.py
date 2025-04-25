@@ -110,9 +110,10 @@ class OdashAPI(http.Controller):
                 content_type='application/json',
                 status=500
             )
-            return response
+        return response
 
-    @http.route(['/api/get/dashboard'], type='http', auth='none', csrf=False, methods=['POST'], cors="*")
+
+    @http.route(['/api/get/dashboard'], type='http', auth='api_key_dashboard', csrf=False, methods=['POST'], cors="*")
     def get_visualization_data(self, **kw):
         """
         Process the dashboard configuration and return data in the required format
@@ -203,12 +204,20 @@ class OdashAPI(http.Controller):
                     # Get domain, groupby and orderby from configuration
                     data_source = config.get('data_source', {})
                     domain = data_source.get('domain', [])
-                    group_by = data_source.get('groupBy', {})
-                    order_by = data_source.get('orderBy', {})
-
+                    
+                    # Modification: groupBy devient un tableau d'objets
+                    group_by_list = data_source.get('groupBy', [])
+                    if isinstance(group_by_list, dict):  # Pour compatibilité avec l'ancien format
+                        group_by_list = [group_by_list] if group_by_list else []
+                        
+                    # Modification: orderBy devient un tableau d'objets
+                    order_by_list = data_source.get('orderBy', [])
+                    if isinstance(order_by_list, dict):  # Pour compatibilité avec l'ancien format
+                        order_by_list = [order_by_list] if order_by_list else []
+                        
                     _logger.info("Generating graph data for model: %s, with measures: %s, groupby: %s",
-                                model_name, measures, group_by)
-
+                                model_name, measures, group_by_list)
+                    
                     try:
                         # Check if model exists
                         model_obj = request.env[model_name].sudo()
@@ -217,11 +226,45 @@ class OdashAPI(http.Controller):
                         if not measures:
                             measures = [{'field': 'id', 'aggregation': 'count', 'displayName': 'Count'}]
 
+                        # Fields to group by - support de multiple groupby
+                        groupby_fields = []
+                        
+                        # Si group_by_list n'est pas vide, on l'utilise
+                        if group_by_list:
+                            for group_by in group_by_list:
+                                field = group_by.get('field')
+                                interval = group_by.get('interval')
+                                
+                                if field:
+                                    # Nouveau format: field et interval sont séparés
+                                    # Vérifier si on a un intervalle spécifié séparément
+                                    if interval and ':' not in field:
+                                        # Si le champ est un champ date et qu'un intervalle est spécifié
+                                        field_obj = model_obj._fields.get(field)
+                                        if field_obj and field_obj.type in ['date', 'datetime']:
+                                            # Format pour Odoo: field:interval
+                                            field_with_interval = f"{field}:{interval}"
+                                            groupby_fields.append(field_with_interval)
+                                        else:
+                                            # Si ce n'est pas un champ date, on ignore l'intervalle
+                                            _logger.warning(
+                                                "Interval '%s' specified for non-date field '%s', ignoring interval",
+                                                interval, field
+                                            )
+                                            groupby_fields.append(field)
+                                    else:
+                                        # Compatibilité avec l'ancien format où le field contient déjà l'intervalle
+                                        groupby_fields.append(field)
+                        
+                        # Si aucun groupby n'est spécifié, on utilise create_date:month par défaut
+                        if not groupby_fields:
+                            groupby_fields.append('create_date:month')
+                        
                         # Field to group by
-                        groupby_field = group_by.get('field') if group_by else None
-                        if not groupby_field:
-                            # Default to grouping by creation month
-                            groupby_field = 'create_date:month'
+                        #groupby_field = group_by.get('field') if group_by else None
+                        #if not groupby_field:
+                        #    # Default to grouping by creation month
+                        #    groupby_field = 'create_date:month'
 
                         # Build the list of fields to aggregate for read_group
                         aggregation_fields = []
@@ -250,19 +293,45 @@ class OdashAPI(http.Controller):
 
                         # Set order if specified
                         orderby = None
-                        if order_by and order_by.get('field'):
-                            orderby_field = order_by.get('field')
-                            direction = order_by.get('direction', 'asc')
-                            orderby = f"{orderby_field} {direction}"
-
+                        if order_by_list and len(order_by_list) > 0:
+                            # On utilise le premier orderBy du tableau
+                            first_order = order_by_list[0]
+                            if first_order.get('field'):
+                                orderby_field = first_order.get('field')
+                                direction = first_order.get('direction', 'asc')
+                                
+                                # Vérifier si le champ de tri est valide pour read_group
+                                # Dans read_group, l'orderby ne peut être que:
+                                # 1. Le champ de groupby
+                                # 2. Un champ agrégé
+                                is_valid_orderby = False
+                                
+                                # Vérifier si c'est un champ de groupby
+                                if orderby_field in groupby_fields:
+                                    is_valid_orderby = True
+                                    
+                                # Vérifier si c'est un champ agrégé
+                                elif orderby_field in aggregation_fields:
+                                    is_valid_orderby = True
+                                    
+                                # Si valide, construire l'orderby
+                                if is_valid_orderby:
+                                    orderby = f"{orderby_field} {direction}"
+                                else:
+                                    _logger.warning(
+                                        "Order field '%s' is not a valid groupby field nor aggregate. "
+                                        "In read_group, you can only order by the groupby field or an aggregated field. "
+                                        "Ignoring orderby.", orderby_field
+                                    )
+                        
                         # Limit number of data points (for performance)
                         limit = 100
 
-                        # Get grouped data
+                        # Get grouped data - support de multiple groupby
                         groups = model_obj.read_group(
                             domain=domain,
                             fields=aggregation_fields,
-                            groupby=[groupby_field],
+                            groupby=groupby_fields,
                             orderby=orderby,
                             limit=limit,
                             lazy=False
@@ -270,68 +339,117 @@ class OdashAPI(http.Controller):
 
                         # Format data for response
                         data = []
-
+                        
+                        # Fonction pour extraire les valeurs de groupby dans un format standardisé
+                        def extract_group_values(group, groupby_fields):
+                            group_values = []
+                            
+                            for field in groupby_fields:
+                                # Pour les champs date avec intervalle (ex: create_date:month)
+                                if ':' in field:
+                                    base_field, interval = field.split(':')
+                                    group_value = group.get(field)
+                                    if group_value:
+                                        group_values.append(str(group_value))
+                                    else:
+                                        group_values.append("Undefined")
+                                else:
+                                    # Pour les champs standards
+                                    group_value = group.get(field)
+                                    if isinstance(group_value, tuple) and len(group_value) >= 2:
+                                        # Many2one fields return (id, name)
+                                        group_values.append(str(group_value[1]))
+                                    else:
+                                        # For other field types
+                                        group_values.append(str(group_value) if group_value is not None else "Undefined")
+                            
+                            return group_values
+                        
+                        # Nouvelle structure pour regrouper par première valeur de groupby
+                        grouped_data = {}
+                        
                         for group in groups:
-                            data_point = {}
+                            # Pour le premier groupby, on utilise la clé "key" 
+                            # Pour les autres groupby, on ajoute la valeur après un pipe aux noms des champs
+                            group_values = extract_group_values(group, groupby_fields)
+                            
+                            # Première valeur de groupby comme clé principale 
+                            primary_key = group_values[0] if group_values else "Undefined"
 
-                            # Extract the grouping key (format depends on field type)
-                            # For date fields with interval, the key is in a special format
-                            if ':' in groupby_field:  # Date with interval
-                                base_field, interval = groupby_field.split(':')
-                                group_value = group.get(groupby_field)
-                                if group_value:
-                                    data_point["key"] = group_value
-                                else:
-                                    data_point["key"] = "Undefined"
-                            else:  # Standard fields
-                                group_value = group.get(groupby_field)
-                                if isinstance(group_value, tuple) and len(group_value) >= 2:
-                                    # Many2one fields return (id, name)
-                                    data_point["key"] = group_value[1]
-                                else:
-                                    # For other field types
-                                    data_point["key"] = str(group_value) if group_value is not None else "Undefined"
+                            # Récupérer le domaine pour le premier groupby uniquement
+                            first_groupby_field = groupby_fields[0]
 
+                            # Pour les champs date avec intervalle, extraire le nom de base
+                            if ':' in first_groupby_field:
+                                base_field, interval = first_groupby_field.split(':')
+                                field_name = base_field
+                            else:
+                                field_name = first_groupby_field
+
+                            # Obtenir la valeur du premier groupby pour ce groupe
+                            group_value = group.get(first_groupby_field)
+                            first_groupby_value = None
+
+                            if isinstance(group_value, tuple) and len(group_value) >= 2:
+                                # Si c'est un many2one, prendre l'ID
+                                first_groupby_value = group_value[0]
+                            else:
+                                first_groupby_value = group_value
+
+                            # Construire un domaine simplifié pour le premier groupby
+                            if first_groupby_value is not None:
+                                # On n'inclut pas le domain original, seulement la condition sur le premier groupby
+                                first_groupby_domain = [[field_name, '=', first_groupby_value]]
+                            else:
+                                first_groupby_domain = []
+                            
+                            # Initialiser l'entrée dans grouped_data si elle n'existe pas
+                            if primary_key not in grouped_data:
+                                grouped_data[primary_key] = {
+                                    "key": primary_key,
+                                    "odash.domain": first_groupby_domain
+                                }
+                            
                             # Add measures
                             for measure in measures:
                                 field_name = measure.get('field')
                                 aggregation = measure.get('aggregation', 'sum')
-
+                                
                                 if field_name:
                                     measure_value = None
-
+                                    
                                     # Key name depends on aggregation type
                                     if aggregation == 'count':
                                         # For count, Odoo automatically adds a special field
-                                        if f"{groupby_field}_count" in group:
-                                            measure_value = group.get(f"{groupby_field}_count", 0)
+                                        if f"{groupby_fields[0]}_count" in group:
+                                            measure_value = group.get(f"{groupby_fields[0]}_count", 0)
                                         else:
                                             measure_value = len(group.get('__domain', []))
                                     else:
                                         # For other aggregations, Odoo calculates automatically based on field type
                                         measure_value = group.get(field_name, 0)
-
-                                    # Add value to data point
-                                    data_point[field_name] = measure_value
-
-                            # Ajout du domain spécifique au groupe
-                            data_point["odash.domain"] = group.get("__domain", domain)
-                            data.append(data_point)
+                                    
+                                    # Construction de la clé avec pipe pour groupby multiples
+                                    if len(group_values) > 1:
+                                        # Format: field_name|second_groupby|third_groupby|...
+                                        field_key = field_name + '|' + '|'.join(group_values[1:])
+                                    else:
+                                        field_key = field_name
+                                    
+                                    # Add value to data point with field_key
+                                    grouped_data[primary_key][field_key] = measure_value
+                        
+                        # Convertir le dictionnaire en liste
+                        data = list(grouped_data.values())
 
                     except Exception as e:
                         _logger.error("Error generating graph data: %s", str(e))
-                        # Return simulated data in case of error
-                        data = []
-                        current_year = datetime.now().year
-                        for month in range(1, 7):  # January to June
-                            data_point = {
-                                "key": f"{current_year}-{month:02d}",  # Format: YYYY-MM
-                            }
-                            for measure in measures:
-                                field_name = measure.get('field', '')
-                                if field_name:
-                                    data_point[field_name] = round(random.uniform(1000, 10000), 2)
-                            data.append(data_point)
+                        # Retourner un objet d'erreur standardisé au lieu d'une valeur de fallback
+                        return_data = {
+                            'success': False,
+                            'error': str(e)
+                        }
+                        return self._build_response(return_data, status=500)
 
                     # Prepare response data
                     visualization_data = {
@@ -349,9 +467,17 @@ class OdashAPI(http.Controller):
                     # Get domain, groupby and orderby from configuration
                     data_source = config.get('data_source', {})
                     domain = data_source.get('domain', [])
-                    group_by = data_source.get('groupBy', {})
-                    order_by = data_source.get('orderBy', {})
-
+                    
+                    # Modification: groupBy devient un tableau d'objets
+                    group_by_list = data_source.get('groupBy', [])
+                    if isinstance(group_by_list, dict):  # Pour compatibilité avec l'ancien format
+                        group_by_list = [group_by_list] if group_by_list else []
+                        
+                    # Modification: orderBy devient un tableau d'objets
+                    order_by_list = data_source.get('orderBy', [])
+                    if isinstance(order_by_list, dict):  # Pour compatibilité avec l'ancien format
+                        order_by_list = [order_by_list] if order_by_list else []
+                        
                     _logger.info("Generating table data for model: %s, with columns: %s",
                                 model_name, columns)
 
@@ -368,112 +494,141 @@ class OdashAPI(http.Controller):
 
                         # Build the order parameter for Odoo search
                         order = None
-                        if order_by and order_by.get('field'):
-                            direction = order_by.get('direction', 'asc')
-                            order = f"{order_by.get('field')} {direction}"
-
+                        if order_by_list and len(order_by_list) > 0:
+                            # On utilise le premier orderBy du tableau
+                            first_order = order_by_list[0]
+                            if first_order.get('field'):
+                                direction = first_order.get('direction', 'asc')
+                                order = f"{first_order.get('field')} {direction}"
+                        
                         # Handle groupby
-                        if group_by and group_by.get('field'):
+                        if group_by_list and len(group_by_list) > 0:
                             # In Odoo, we can implement groupby using read_group
-                            groupby_field = group_by.get('field')
-                            _logger.info("Using read_group with groupby: %s", groupby_field)
-
-                            # Special case: if groupby field is 'id', we should not use read_group
-                            # because it doesn't make sense to group by id (each record has a unique id)
-                            # In this case, we'll use a regular search and read
-                            if groupby_field == 'id':
-                                _logger.info("Grouping by id detected, using regular search instead")
-                                records = model_obj.search(domain, limit=page_size, order=order)
-
-                                # Read the fields
-                                data = []
-                                if records:
-                                    # Read all fields at once for better performance
-                                    records_data = records.read(fields_to_read)
-
-                                    # Post-process the data
-                                    for record in records_data:
-                                        row = {}
-                                        for field_name in fields_to_read:
-                                            field_value = record.get(field_name)
-                                            field_info = model_obj._fields.get(field_name)
-
-                                            # Handle different field types
-                                            if field_info and field_info.type == 'many2one' and isinstance(field_value, (list, tuple)) and len(field_value) >= 2:
-                                                # Many2one fields need to be formatted as {id, name} objects
-                                                row[field_name] = {
-                                                    'id': field_value[0],
-                                                    'name': field_value[1]
-                                                }
-                                            else:
-                                                # For other fields, use the value directly
-                                                row[field_name] = field_value
-
-                                        # Ajout du domain global (pas de groupby)
-                                        row["odash.domain"] = domain + [["id", "=", record.get("id")]]
-                                        data.append(row)
-                            else:
-                                # Fields to aggregate
-                                aggregation_fields = []
-                                for column in columns:
-                                    field_name = column.get('field')
-                                    if field_name and field_name != groupby_field:
-                                        # Only add fields that can be aggregated
-                                        field_info = model_obj._fields.get(field_name)
-                                        if field_info and field_info.type in ['integer', 'float', 'monetary']:
-                                            aggregation_fields.append(field_name)
-
-                                # Build a valid orderby for read_group
-                                # When using read_group, the orderby must be based on an aggregation field
-                                # or the groupby field itself
-                                read_group_orderby = None
-                                if order_by and order_by.get('field'):
-                                    order_field = order_by.get('field')
-                                    direction = order_by.get('direction', 'asc')
-
-                                    # Check if the order field is either the groupby field or an aggregation field
-                                    if order_field == groupby_field:
-                                        read_group_orderby = f"{order_field} {direction}"
-                                    elif order_field in aggregation_fields:
-                                        read_group_orderby = f"{order_field} {direction}"
+                            groupby_fields = []
+                            for group_by in group_by_list:
+                                field = group_by.get('field')
+                                interval = group_by.get('interval')
+                                
+                                if field:
+                                    # Nouveau format: field et interval sont séparés
+                                    # Vérifier si on a un intervalle spécifié séparément
+                                    if interval and ':' not in field:
+                                        # Si le champ est un champ date et qu'un intervalle est spécifié
+                                        field_obj = model_obj._fields.get(field)
+                                        if field_obj and field_obj.type in ['date', 'datetime']:
+                                            # Format pour Odoo: field:interval
+                                            field_with_interval = f"{field}:{interval}"
+                                            groupby_fields.append(field_with_interval)
+                                        else:
+                                            # Si ce n'est pas un champ date, on ignore l'intervalle
+                                            _logger.warning(
+                                                "Interval '%s' specified for non-date field '%s', ignoring interval",
+                                                interval, field
+                                            )
+                                            groupby_fields.append(field)
                                     else:
-                                        # Default to groupby field if order field is not compatible
-                                        _logger.warning("Order field %s not compatible with read_group for groupby %s, using groupby field instead",
-                                                    order_field, groupby_field)
-                                        read_group_orderby = f"{groupby_field} asc"
+                                        # Compatibilité avec l'ancien format où le field contient déjà l'intervalle
+                                        groupby_fields.append(field)
+                            
+                            # Si aucun groupby n'est spécifié, on ne fait pas de groupby
+                            if not groupby_fields:
+                                groupby_fields = []
+                        
+                            # Fields to aggregate
+                            aggregation_fields = []
+                            for column in columns:
+                                field_name = column.get('field')
+                                if field_name and field_name != groupby_fields[0]:
+                                    # Only add fields that can be aggregated
+                                    field_info = model_obj._fields.get(field_name)
+                                    if field_info and field_info.type in ['integer', 'float', 'monetary']:
+                                        aggregation_fields.append(field_name)
 
-                                # Get the results grouped by the field
-                                groups = model_obj.read_group(
-                                    domain=domain,
-                                    fields=[groupby_field] + aggregation_fields,
-                                    groupby=[groupby_field],
-                                    orderby=read_group_orderby,
-                                    limit=page_size
-                                )
+                            # Build a valid orderby for read_group
+                            # When using read_group, the orderby must be based on an aggregation field
+                            # or the groupby field itself
+                            read_group_orderby = None
+                            if order_by_list and len(order_by_list) > 0:
+                                first_order = order_by_list[0]
+                                order_field = first_order.get('field')
+                                direction = first_order.get('direction', 'asc')
 
-                                # Format the result for response
-                                data = []
-                                for group in groups:
-                                    row = {}
+                                # Vérifier si le champ de tri est valide pour read_group
+                                is_valid_orderby = False
+                                
+                                # Vérifier si c'est un champ de groupby
+                                if groupby_fields and order_field == groupby_fields[0]:
+                                    is_valid_orderby = True
+                                    read_group_orderby = f"{order_field} {direction}"
+                                    
+                                # Vérifier si c'est un champ agrégé
+                                elif order_field in aggregation_fields:
+                                    is_valid_orderby = True
+                                    read_group_orderby = f"{order_field} {direction}"
+                                
+                                # Si non valide, utiliser le groupby comme fallback
+                                if not is_valid_orderby and groupby_fields:
+                                    _logger.warning(
+                                        "Order field '%s' is not a valid groupby field nor aggregate. "
+                                        "Using groupby field as fallback.", order_field
+                                    )
+                                    read_group_orderby = f"{groupby_fields[0]} asc"
+                        
+                            # Get the results grouped by the field
+                            groups = model_obj.read_group(
+                                domain=domain,
+                                fields=[groupby_fields[0]] + aggregation_fields,
+                                groupby=[groupby_fields[0]],
+                                orderby=read_group_orderby,
+                                limit=page_size
+                            )
 
-                                    # Format the groupby field which is typically a many2one
-                                    groupby_value = group.get(groupby_field)
-                                    if isinstance(groupby_value, tuple) and len(groupby_value) >= 2:
-                                        # Many2one fields return (id, name)
-                                        row[groupby_field] = {
-                                            'id': groupby_value[0],
-                                            'name': groupby_value[1]
-                                        }
-                                    else:
-                                        row[groupby_field] = groupby_value
+                            # Format the result for response
+                            data = []
+                            for group in groups:
+                                row = {}
 
-                                    # Add aggregated values
-                                    for field in aggregation_fields:
-                                        row[field] = group.get(field)
+                                # Format the groupby field which is typically a many2one
+                                groupby_value = group.get(groupby_fields[0])
+                                if isinstance(groupby_value, tuple) and len(groupby_value) >= 2:
+                                    # Many2one fields return (id, name)
+                                    row[groupby_fields[0]] = {
+                                        'id': groupby_value[0],
+                                        'name': groupby_value[1]
+                                    }
+                                else:
+                                    row[groupby_fields[0]] = groupby_value
 
-                                    # Ajout du domain spécifique au groupe
-                                    row["odash.domain"] = group.get("__domain", domain)
-                                    data.append(row)
+                                # Add aggregated values
+                                for field in aggregation_fields:
+                                    row[field] = group.get(field)
+
+                                # Ajout du domaine spécifique au groupe
+                                first_groupby_field = groupby_fields[0]
+
+                                # Pour les champs date avec intervalle, extraire le nom de base
+                                if ':' in first_groupby_field:
+                                    base_field, interval = first_groupby_field.split(':')
+                                    field_name = base_field
+                                else:
+                                    field_name = first_groupby_field
+
+                                # Obtenir la valeur du premier groupby pour ce groupe
+                                group_value = group.get(first_groupby_field)
+                                first_groupby_value = None
+
+                                if isinstance(group_value, tuple) and len(group_value) >= 2:
+                                    # Si c'est un many2one, prendre l'ID
+                                    first_groupby_value = group_value[0]
+                                else:
+                                    first_groupby_value = group_value
+
+                                # Construire un domaine simplifié pour le premier groupby
+                                if first_groupby_value is not None:
+                                    row["odash.domain"] = [[field_name, '=', first_groupby_value]]
+                                else:
+                                    row["odash.domain"] = []
+                                data.append(row)
                         else:
                             # No groupby, just do a normal search and read
                             records = model_obj.search(domain, limit=page_size, order=order)
@@ -502,14 +657,18 @@ class OdashAPI(http.Controller):
                                             # For other fields, use the value directly
                                             row[field_name] = field_value
 
-                                    # Ajout du domain global (pas de groupby)
-                                    row["odash.domain"] = domain + [["id", "=", record.get("id")]]
+                                    # Ajout du domain spécifique à l'ID du record uniquement
+                                    row["odash.domain"] = [["id", "=", record.get("id")]]
                                     data.append(row)
 
                     except Exception as e:
                         _logger.error("Error generating table data: %s", str(e))
-                        # Return empty data on error
-                        data = []
+                        # Retourner un objet d'erreur standardisé au lieu d'une valeur de fallback
+                        return_data = {
+                            'success': False,
+                            'error': str(e)
+                        }
+                        return self._build_response(return_data, status=500)
 
                     # Prepare response data
                     visualization_data = {
@@ -592,8 +751,12 @@ class OdashAPI(http.Controller):
 
                     except Exception as e:
                         _logger.error("Error executing query for block data: %s", str(e))
-                        # Return a fallback value
-                        value = 0
+                        # Retourner un objet d'erreur standardisé au lieu d'une valeur de fallback
+                        return_data = {
+                            'success': False,
+                            'error': str(e)
+                        }
+                        return self._build_response(return_data, status=500)
 
                     # Get field label for display
                     field_label = field_name
@@ -607,7 +770,7 @@ class OdashAPI(http.Controller):
                             "data": {
                                 "value": value,
                                 "label": field_label,
-                                "odash.domain": domain
+                                "odash.domain": []
                             },
                         }
                     }
@@ -620,7 +783,7 @@ class OdashAPI(http.Controller):
                 return self._build_response({'success': False, 'error': 'No valid configuration data found'}, status=400)
 
             # Return the final response
-            return self._build_response(response_data)
+            return self._build_response({'success': True, 'data': response_data})
 
         except Exception as e:
             _logger.error("Error in API get_visualization_data: %s", str(e))
@@ -645,7 +808,7 @@ class OdashAPI(http.Controller):
             model_obj = request.env[model_name].sudo()
             fields_info = self._get_fields_info(model_obj)
 
-            return ApiHelper.json_valid_response(fields_info, 200)
+            return self._build_response({'success': True, 'data': fields_info}, 200)
 
         except Exception as e:
             _logger.error("Error in API get_model_fields: %s", str(e))
