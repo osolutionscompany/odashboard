@@ -5,7 +5,7 @@ from odoo.http import request, Response
 import json
 import logging
 import random
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 _logger = logging.getLogger(__name__)
 
@@ -110,8 +110,159 @@ class OdashAPI(http.Controller):
                 content_type='application/json',
                 status=500
             )
-        return response
+            return response
 
+
+    def _parse_date_from_string(self, date_str, interval):
+        _logger.info(f"Parsing date string: '{date_str}' with interval '{interval}'")
+        """Parse date string to datetime object based on interval format"""
+        try:
+            if interval == 'day':
+                # Try different formats for day
+                formats = ['%Y-%m-%d', '%d %b %Y', '%d/%m/%Y', '%m/%d/%Y']
+                for fmt in formats:
+                    try:
+                        return datetime.strptime(date_str, fmt)
+                    except ValueError:
+                        continue
+                # If we get here, none of the formats worked
+                return None
+            elif interval == 'week':
+                # Try standard week format first
+                try:
+                    # Format should be like '2023-W01'
+                    year, week = date_str.split('-W')
+                    # Use ISO calendar to get first day of the week
+                    return datetime.strptime(f"{year}-{week}-1", '%Y-%W-%w')
+                except ValueError:
+                    # Try to extract week from a date
+                    for fmt in ['%d %b %Y', '%Y-%m-%d']:
+                        try:
+                            dt = datetime.strptime(date_str, fmt)
+                            # Return the first day of that week
+                            return dt - timedelta(days=dt.weekday())
+                        except ValueError:
+                            continue
+                return None
+            elif interval == 'month':
+                # Try different formats for month
+                formats = ['%Y-%m', '%b %Y', '%B %Y']
+                for fmt in formats:
+                    try:
+                        return datetime.strptime(date_str, fmt)
+                    except ValueError:
+                        continue
+                # If we get here, try to extract month from a full date
+                try:
+                    dt = datetime.strptime(date_str, '%d %b %Y')
+                    return dt.replace(day=1)
+                except ValueError:
+                    pass
+                return None
+            elif interval == 'quarter':
+                # Format should be like '2023-Q1'
+                try:
+                    year, quarter = date_str.split('-Q')
+                    month = (int(quarter) - 1) * 3 + 1
+                    return datetime(int(year), month, 1)
+                except ValueError:
+                    # Try to extract quarter from a date
+                    for fmt in ['%d %b %Y', '%Y-%m-%d']:
+                        try:
+                            dt = datetime.strptime(date_str, fmt)
+                            quarter = (dt.month - 1) // 3 + 1
+                            month = (quarter - 1) * 3 + 1
+                            return datetime(dt.year, month, 1)
+                        except ValueError:
+                            continue
+                return None
+            elif interval == 'year':
+                # Try different formats for year
+                try:
+                    return datetime.strptime(date_str, '%Y')
+                except ValueError:
+                    # Try to extract year from a full date
+                    for fmt in ['%d %b %Y', '%Y-%m-%d', '%b %Y']:
+                        try:
+                            dt = datetime.strptime(date_str, fmt)
+                            return datetime(dt.year, 1, 1)
+                        except ValueError:
+                            continue
+                return None
+            else:
+                return None
+        except Exception as e:
+            _logger.warning(f"Error parsing date '{date_str}' with interval '{interval}': {e}")
+            return None
+
+    def _generate_intermediate_dates(self, start_date, end_date, interval):
+        """Generate intermediate date strings between start and end date based on interval"""
+        result = []
+        
+        # Calculate the step size based on interval
+        if interval == 'day':
+            delta = timedelta(days=1)
+            # Format that matches the frontend expectation (e.g., "11 Apr 2025")
+            format_str = '%d %b %Y'
+        elif interval == 'week':
+            delta = timedelta(weeks=1)
+            # Format for week needs to match frontend - typically returns week number
+            # Check if start_date has a format we can infer from
+            format_str = '%d %b %Y'  # Use day format as default for now
+        elif interval == 'month':
+            # For month, use a different approach
+            current = start_date
+            while current < end_date:
+                # Move to next month
+                month = current.month + 1
+                year = current.year
+                if month > 12:
+                    month = 1
+                    year += 1
+                current = current.replace(year=year, month=month)
+                if current < end_date:
+                    # Format like "Apr 2025"
+                    result.append(current.strftime('%b %Y'))
+            return result
+        elif interval == 'quarter':
+            # For quarter, move by 3 months
+            current = start_date
+            while current < end_date:
+                # Move to next quarter
+                month = current.month + 3
+                year = current.year
+                if month > 12:
+                    month = month - 12
+                    year += 1
+                current = current.replace(year=year, month=month)
+                if current < end_date:
+                    quarter = (current.month - 1) // 3 + 1
+                    # Format like "Q1 2025"
+                    result.append(f"Q{quarter} {current.year}")
+            return result
+        elif interval == 'year':
+            # For year, move one year at a time
+            for year in range(start_date.year + 1, end_date.year):
+                result.append(str(year))
+            return result
+        else:
+            return result
+            
+        # For day and week, use timedelta approach
+        current = start_date + delta
+        while current < end_date:
+            result.append(current.strftime(format_str))
+            current += delta
+            
+        return result
+
+    def _build_response(self, data, status=200):
+        """Build standardized API response"""
+        return Response(
+            json.dumps(data, cls=OdashboardJSONEncoder),
+            content_type='application/json',
+            status=status
+        )
 
     @http.route(['/api/get/dashboard'], type='http', auth='api_key_dashboard', csrf=False, methods=['POST'], cors="*")
     def get_visualization_data(self, **kw):
@@ -256,8 +407,9 @@ class OdashAPI(http.Controller):
                                         # Compatibilité avec l'ancien format où le field contient déjà l'intervalle
                                         groupby_fields.append(field)
                         
-                        # Si aucun groupby n'est spécifié, on utilise create_date:month par défaut
-                        if not groupby_fields:
+                        # Pour les blocks, on n'utilise pas de groupby par défaut
+                        # Pour les autres types (graph, table), on utilise create_date:month par défaut
+                        if not groupby_fields and visualization_type != 'block':
                             groupby_fields.append('create_date:month')
                         
                         # Field to group by
@@ -377,17 +529,24 @@ class OdashAPI(http.Controller):
                             primary_key = group_values[0] if group_values else "Undefined"
 
                             # Récupérer le domaine pour le premier groupby uniquement
-                            first_groupby_field = groupby_fields[0]
+                            if not groupby_fields:
+                                # Si pas de groupby, on ne peut pas récupérer de domaine spécifique
+                                first_groupby_field = None
+                            else:
+                                first_groupby_field = groupby_fields[0] if groupby_fields else None
 
                             # Pour les champs date avec intervalle, extraire le nom de base
-                            if ':' in first_groupby_field:
-                                base_field, interval = first_groupby_field.split(':')
-                                field_name = base_field
+                            if first_groupby_field:
+                                if ':' in first_groupby_field:
+                                    base_field, interval = first_groupby_field.split(':')
+                                    field_name = base_field
+                                else:
+                                    field_name = first_groupby_field
                             else:
-                                field_name = first_groupby_field
+                                field_name = None
 
                             # Obtenir la valeur du premier groupby pour ce groupe
-                            group_value = group.get(first_groupby_field)
+                            group_value = group.get(first_groupby_field) if first_groupby_field else None
                             first_groupby_value = None
 
                             if isinstance(group_value, tuple) and len(group_value) >= 2:
@@ -399,7 +558,7 @@ class OdashAPI(http.Controller):
                             # Construire un domaine simplifié pour le premier groupby
                             if first_groupby_value is not None:
                                 # On n'inclut pas le domain original, seulement la condition sur le premier groupby
-                                first_groupby_domain = [[field_name, '=', first_groupby_value]]
+                                first_groupby_domain = [[field_name, "=", first_groupby_value]] if field_name else []
                             else:
                                 first_groupby_domain = []
                             
@@ -441,6 +600,77 @@ class OdashAPI(http.Controller):
                         
                         # Convertir le dictionnaire en liste
                         data = list(grouped_data.values())
+                        
+                        # Fill intermediate dates if specified and first groupby is a date field with interval
+                        show_intermediate_dates = data_source.get('show_intermediate_dates', False)
+                        if show_intermediate_dates and groupby_fields:
+                            # Detect the format used for groupBy
+                            date_field = None
+                            interval = None
+                            
+                            # Check if we're using the old format with colon
+                            if groupby_fields and isinstance(groupby_fields[0], str) and ':' in groupby_fields[0]:
+                                date_field, interval = groupby_fields[0].split(':')
+                                _logger.info(f"Using old groupBy format: {date_field}:{interval}")
+                            else:
+                                # New format - get from the original group_by_list objects
+                                group_by_list = data_source.get('groupBy', [])
+                                if group_by_list and isinstance(group_by_list, list) and len(group_by_list) > 0:
+                                    first_groupby = group_by_list[0]
+                                    if isinstance(first_groupby, dict) and 'field' in first_groupby and 'interval' in first_groupby:
+                                        date_field = first_groupby['field']
+                                        interval = first_groupby['interval']
+                                        _logger.info(f"Using new groupBy format: field={date_field}, interval={interval}")
+                            
+                            # Verify this is actually a date field
+                            field_obj = model_obj._fields.get(date_field)
+                            if field_obj and field_obj.type in ['date', 'datetime']:
+                                try:
+                                    # Sort data by date key
+                                    data.sort(key=lambda x: x.get('key', ''))
+                                    
+                                    # If we have at least 2 date points, we can fill gaps
+                                    if len(data) >= 2:
+                                        filled_data = []
+                                        
+                                        # For all points except the last one
+                                        for i in range(len(data) - 1):
+                                            current = data[i]
+                                            next_point = data[i + 1]
+                                            
+                                            # Add the current point
+                                            filled_data.append(current)
+                                            
+                                            # Generate intermediate dates based on interval
+                                            current_date = self._parse_date_from_string(current.get('key', ''), interval)
+                                            next_date = self._parse_date_from_string(next_point.get('key', ''), interval)
+                                            
+                                            if current_date and next_date:
+                                                intermediate_dates = self._generate_intermediate_dates(
+                                                    current_date, next_date, interval)
+                                                
+                                                # Add intermediate points with zero values
+                                                for date_str in intermediate_dates:
+                                                    # Create a new data point for the intermediate date
+                                                    intermediate_point = {
+                                                        "key": date_str,
+                                                        "odash.domain": [[date_field, "=", date_str]]
+                                                    }
+                                                    
+                                                    # Add zero values for all measures/fields in the current point
+                                                    for key, value in current.items():
+                                                        if key not in ['key', 'odash.domain']:
+                                                            intermediate_point[key] = 0
+                                                    
+                                                    filled_data.append(intermediate_point)
+                                        
+                                        # Add the last point
+                                        filled_data.append(data[-1])
+                                        
+                                        # Replace original data with filled data
+                                        data = filled_data
+                                except Exception as e:
+                                    _logger.warning("Error filling intermediate dates: %s", str(e))
 
                     except Exception as e:
                         _logger.error("Error generating graph data: %s", str(e))
@@ -459,7 +689,7 @@ class OdashAPI(http.Controller):
                     }
 
                 elif visualization_type == 'table':
-                    # Get real data for a table
+                    # Get table configuration
                     table_options = config.get('table_options', {})
                     columns = table_options.get('columns', [])
                     page_size = table_options.get('pageSize', 10)
@@ -572,13 +802,13 @@ class OdashAPI(http.Controller):
                                         "Order field '%s' is not a valid groupby field nor aggregate. "
                                         "Using groupby field as fallback.", order_field
                                     )
-                                    read_group_orderby = f"{groupby_fields[0]} asc"
+                                    read_group_orderby = f"{groupby_fields[0] if groupby_fields else 'id'} asc"
                         
                             # Get the results grouped by the field
                             groups = model_obj.read_group(
                                 domain=domain,
-                                fields=[groupby_fields[0]] + aggregation_fields,
-                                groupby=[groupby_fields[0]],
+                                fields=([] if not groupby_fields else [groupby_fields[0]]) + aggregation_fields,
+                                groupby=([] if not groupby_fields else [groupby_fields[0]]),
                                 orderby=read_group_orderby,
                                 limit=page_size
                             )
@@ -604,7 +834,7 @@ class OdashAPI(http.Controller):
                                     row[field] = group.get(field)
 
                                 # Ajout du domaine spécifique au groupe
-                                first_groupby_field = groupby_fields[0]
+                                first_groupby_field = groupby_fields[0] if groupby_fields else None
 
                                 # Pour les champs date avec intervalle, extraire le nom de base
                                 if ':' in first_groupby_field:
