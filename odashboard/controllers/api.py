@@ -264,7 +264,7 @@ class OdashAPI(http.Controller):
             status=status
         )
 
-    @http.route(['/api/get/dashboard'], type='http', auth='api_key_dashboard', csrf=False, methods=['POST'], cors="*")
+    @http.route(['/api/get/dashboard'], type='http', auth='none', csrf=False, methods=['POST'], cors="*")
     def get_visualization_data(self, **kw):
         """
         Process the dashboard configuration and return data in the required format
@@ -601,76 +601,149 @@ class OdashAPI(http.Controller):
                         # Convertir le dictionnaire en liste
                         data = list(grouped_data.values())
                         
-                        # Fill intermediate dates if specified and first groupby is a date field with interval
-                        show_intermediate_dates = data_source.get('show_intermediate_dates', False)
-                        if show_intermediate_dates and groupby_fields:
-                            # Detect the format used for groupBy
-                            date_field = None
-                            interval = None
+                        # Fonctionnalité show_intermediate_dates supprimée comme demandé
+                        
+                        # 1. Traiter le show_empty pour un seul niveau de groupBy
+                        group_by_list = data_source.get('groupBy', [])
+                        if isinstance(group_by_list, list) and len(group_by_list) > 0:
+                            # Collecter les configurations show_empty
+                            show_empty_configs = []
+                            for idx, group_by in enumerate(group_by_list):
+                                field = group_by.get('field')
+                                interval = group_by.get('interval')
+                                show_empty = group_by.get('show_empty', False)
+                                
+                                if field:
+                                    show_empty_configs.append({
+                                        'field': field,
+                                        'interval': interval,
+                                        'show_empty': show_empty,
+                                        'index': idx
+                                    })
                             
-                            # Check if we're using the old format with colon
-                            if groupby_fields and isinstance(groupby_fields[0], str) and ':' in groupby_fields[0]:
-                                date_field, interval = groupby_fields[0].split(':')
-                                _logger.info(f"Using old groupBy format: {date_field}:{interval}")
-                            else:
-                                # New format - get from the original group_by_list objects
-                                group_by_list = data_source.get('groupBy', [])
-                                if group_by_list and isinstance(group_by_list, list) and len(group_by_list) > 0:
-                                    first_groupby = group_by_list[0]
-                                    if isinstance(first_groupby, dict) and 'field' in first_groupby and 'interval' in first_groupby:
-                                        date_field = first_groupby['field']
-                                        interval = first_groupby['interval']
-                                        _logger.info(f"Using new groupBy format: field={date_field}, interval={interval}")
+                            # Filtrer les configurations avec show_empty activé
+                            show_empty_configs_active = [config for config in show_empty_configs if config.get('show_empty')]
                             
-                            # Verify this is actually a date field
-                            field_obj = model_obj._fields.get(date_field)
-                            if field_obj and field_obj.type in ['date', 'datetime']:
-                                try:
-                                    # Sort data by date key
-                                    data.sort(key=lambda x: x.get('key', ''))
+                            if show_empty_configs_active:
+                                # Ne traiter qu'un seul show_empty à la fois 
+                                first_show_empty = show_empty_configs_active[0]
+                                # Récupérer les informations du champ
+                                field_name = first_show_empty.get('field')
+                                idx = first_show_empty.get('index')
+                                interval = first_show_empty.get('interval')
+                                
+                                # Obtenir l'objet champ pour déterminer son type
+                                field_obj = model_obj._fields.get(field_name)
+                                if field_obj:
+                                    field_type = field_obj.type
                                     
-                                    # If we have at least 2 date points, we can fill gaps
-                                    if len(data) >= 2:
-                                        filled_data = []
-                                        
-                                        # For all points except the last one
-                                        for i in range(len(data) - 1):
-                                            current = data[i]
-                                            next_point = data[i + 1]
-                                            
-                                            # Add the current point
-                                            filled_data.append(current)
-                                            
-                                            # Generate intermediate dates based on interval
-                                            current_date = self._parse_date_from_string(current.get('key', ''), interval)
-                                            next_date = self._parse_date_from_string(next_point.get('key', ''), interval)
-                                            
-                                            if current_date and next_date:
-                                                intermediate_dates = self._generate_intermediate_dates(
-                                                    current_date, next_date, interval)
+                                    # Collecter les valeurs existantes
+                                    existing_values = set()
+                                    
+                                    # Premier groupby (niveau 0) - valeurs dans la clé 'key'
+                                    if idx == 0:
+                                        for item in data:
+                                            key_value = item.get('key')
+                                            if key_value:
+                                                existing_values.add(key_value)
+                                    # Groupby secondaire - valeurs dans les clés avec pipe
+                                    else:
+                                        for item in data:
+                                            for key in item.keys():
+                                                if '|' in key:
+                                                    parts = key.split('|')
+                                                    if len(parts) > idx:
+                                                        existing_values.add(parts[idx])
+                                    
+                                    # Selon le type, collecter toutes les valeurs possibles
+                                    all_values = list(existing_values)
+                                    
+                                    # Traitement spécifique selon le type de champ
+                                    if field_type == 'selection':
+                                        # Ajouter toutes les options de sélection
+                                        for value, _ in field_obj.selection:
+                                            str_value = str(value)
+                                            if str_value not in existing_values:
+                                                all_values.append(str_value)
                                                 
-                                                # Add intermediate points with zero values
-                                                for date_str in intermediate_dates:
-                                                    # Create a new data point for the intermediate date
-                                                    intermediate_point = {
-                                                        "key": date_str,
-                                                        "odash.domain": [[date_field, "=", date_str]]
-                                                    }
-                                                    
-                                                    # Add zero values for all measures/fields in the current point
-                                                    for key, value in current.items():
+                                    elif field_type == 'many2one':
+                                        # Pour les champs many2one, nous devons gérer correctement les ID et noms
+                                        related_model = field_obj.comodel_name
+                                        related_records = request.env[related_model].sudo().search([])
+                                        
+                                        # Dictionnaire pour mapper les noms d'affichage aux IDs
+                                        many2one_values = {}
+                                        
+                                        # D'abord collecter les valeurs existantes et leurs IDs
+                                        if idx == 0:
+                                            # Premier niveau - les valeurs sont dans la clé principale
+                                            for item in data:
+                                                key_value = item.get('key')
+                                                domain = item.get('odash.domain', [])
+                                                if key_value and domain:
+                                                    # Extraire l'ID du domain
+                                                    for field_expr, operator, value in domain:
+                                                        if field_expr == field_name and operator == '=':
+                                                            many2one_values[key_value] = {'name': key_value, 'id': value}
+                                                            break
+                                        
+                                        # Maintenant ajouter tous les enregistrements du modèle lié
+                                        for record in related_records:
+                                            if record.display_name not in many2one_values:
+                                                many2one_values[record.display_name] = {
+                                                    'name': record.display_name,
+                                                    'id': record.id
+                                                }
+                                        
+                                        # Utiliser les valeurs structurées plutôt que de simples chaînes
+                                        all_values = list(many2one_values.values())
+                                    
+                                    # Générer des points de données pour les valeurs manquantes
+                                    if idx == 0:  # Premier niveau de groupby
+                                        existing_keys = set(item.get('key') for item in data)
+                                        for value in all_values:
+                                            value_name = value.get('name') if isinstance(value, dict) else value
+                                            value_id = value.get('id') if isinstance(value, dict) else value
+                                            
+                                            if value_name not in existing_keys:
+                                                # Créer un nouveau point de données pour la valeur manquante
+                                                new_point = {
+                                                    'key': value_name,
+                                                    'odash.domain': [[field_name, '=', value_id]]
+                                                }
+                                                
+                                                # Ajouter des valeurs zéro pour toutes les mesures
+                                                for item in data:
+                                                    for key, _ in item.items():
                                                         if key not in ['key', 'odash.domain']:
-                                                            intermediate_point[key] = 0
+                                                            new_point[key] = 0
+                                                
+                                                # Ajouter le nouveau point aux données
+                                                data.append(new_point)
+                                    else:  # Niveau secondaire de groupby
+                                        # 1. Identifier toutes les mesures uniques
+                                        all_measures = set()
+                                        for item in data:
+                                            for key in item.keys():
+                                                if '|' in key:
+                                                    parts = key.split('|')
+                                                    measure = parts[0]
+                                                    all_measures.add(measure)
+                                                elif key not in ['key', 'odash.domain']:
+                                                    all_measures.add(key)
+                                        
+                                        # 2. Pour chaque point de données, s'assurer que toutes les combinaisons existent
+                                        for item in data:
+                                            for measure in all_measures:
+                                                for value in all_values:
+                                                    value_name = value.get('name') if isinstance(value, dict) else value
                                                     
-                                                    filled_data.append(intermediate_point)
-                                        
-                                        # Add the last point
-                                        filled_data.append(data[-1])
-                                        
-                                        # Replace original data with filled data
-                                        data = filled_data
-                                except Exception as e:
-                                    _logger.warning("Error filling intermediate dates: %s", str(e))
+                                                    # Construire la clé composée pour cette mesure et cette valeur
+                                                    composed_key = f"{measure}|{value_name}"
+                                                    
+                                                    # Si cette clé n'existe pas, ajouter avec valeur zéro
+                                                    if composed_key not in item:
+                                                        item[composed_key] = 0
 
                     except Exception as e:
                         _logger.error("Error generating graph data: %s", str(e))
