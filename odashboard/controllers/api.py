@@ -6,6 +6,7 @@ import json
 import logging
 import random
 from datetime import datetime, date, timedelta
+import calendar
 
 _logger = logging.getLogger(__name__)
 
@@ -130,43 +131,66 @@ class OdashAPI(http.Controller):
                 _logger.warning(f"Aucun format de date reconnu pour '{date_str}' avec intervalle 'day'")
                 return None
             elif interval == 'week':
-                # Try standard week format first
+                # Attempt 1: Format 'YYYY-Www' (e.g., '2023-W01')
                 try:
-                    # Format should be like '2023-W01'
-                    year, week = date_str.split('-W')
-                    # Use ISO calendar to get first day of the week
-                    return datetime.strptime(f"{year}-{week}-1", '%Y-%W-%w')
+                    _logger.debug(f"Parsing week format 'YYYY-Www' for '{date_str}'")
+                    year_str, week_str_num = date_str.split('-W')
+                    week_str_num = week_str_num.zfill(2) # Ensure two digits for week number
+                    # %Y: Year, %W: Week number (Mon as 1st day, 00-53), %w: Weekday (0-6, Sun=0). '-1' forces Monday.
+                    return datetime.strptime(f"{year_str}-{week_str_num}-1", "%Y-%W-%w")
                 except ValueError:
-                    # Try to extract week from a date
-                    for fmt in ['%d %b %Y', '%Y-%m-%d']:
-                        try:
-                            dt = datetime.strptime(date_str, fmt)
-                            # Return the first day of that week
-                            return dt - timedelta(days=dt.weekday())
-                        except ValueError:
-                            continue
-                return None
-            elif interval == 'month':
-                # Try different formats for month
-                formats = ['%Y-%m', '%b %Y', '%B %Y']
-                for fmt in formats:
+                    # Attempt 2: Format 'Www YYYY' (e.g., 'W16 2025') or 'Week ww YYYY'
+                    _logger.debug(f"Parsing week format 'Www YYYY' or 'Week ww YYYY' for '{date_str}'")
                     try:
-                        return datetime.strptime(date_str, fmt)
+                        # Remove "Week " if present, then remove leading "W"
+                        processed_date_str = date_str.replace('Week ', '').lstrip('W') # "W16 2025" -> "16 2025"
+                        week_str_num, year_str = processed_date_str.split(' ')
+                        week_str_num = week_str_num.zfill(2)
+                        return datetime.strptime(f"{year_str}-{week_str_num}-1", "%Y-%W-%w")
+                    except ValueError:
+                        # Attempt 3: Try to parse as a specific date 'DD Mon YYYY' (e.g. Odoo might return the start of the week)
+                        _logger.debug(f"Parsing week format as specific date e.g. 'DD Mon YYYY' for '{date_str}'")
+                        try:
+                            # This format '%d %b %Y' needs to match the actual output if this case occurs.
+                            # Example: '15 Apr 2024' for week 16 of 2024
+                            dt = datetime.strptime(date_str, '%d %b %Y')
+                            # Return the first day of that week to be consistent
+                            return dt - timedelta(days=dt.weekday())
+                        except ValueError as e_final:
+                            _logger.error(f"Échec final du parsing de la date semaine '{date_str}': {e_final}")
+                            raise ValueError(f"Format de date semaine non reconnu: {date_str}") from e_final
+
+            elif interval == 'month':
+                # Common month formats
+                # Order: '%B %Y' (e.g., "April 2025"), then '%b %Y' (e.g., "Apr 2025"), then '%m/%Y', then '%Y-%m'
+                # Try to parse with formats that include day, then generalize
+                month_formats = [
+                    '%d %B %Y', '%d %b %Y', # Example: "01 April 2025", "01 Apr 2025"
+                    '%B %Y',    # Example: "April 2025"
+                    '%b %Y',    # Example: "Apr 2025"
+                    '%m/%Y',    # Example: "04/2025"
+                    '%Y-%m-%d', # Example: "2025-04-01"
+                    '%Y-%m',    # Example: "2025-04"
+                ]
+                for fmt in month_formats:
+                    try:
+                        dt = datetime.strptime(date_str, fmt)
+                        # For month interval, always return the first day of the month
+                        return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                     except ValueError:
                         continue
-                # If we get here, try to extract month from a full date
-                try:
-                    dt = datetime.strptime(date_str, '%d %b %Y')
-                    return dt.replace(day=1)
-                except ValueError:
-                    pass
-                return None
+                _logger.error(f"Format de date mois non reconnu: {date_str}")
+                raise ValueError(f"Format de date mois non reconnu: {date_str}")
+
             elif interval == 'quarter':
-                # Format should be like '2023-Q1'
+                # Example 'Q2 2025' or 'Quarter 2 2025'
                 try:
-                    year, quarter = date_str.split('-Q')
-                    month = (int(quarter) - 1) * 3 + 1
-                    return datetime(int(year), month, 1)
+                    # Remove "Quarter " if present, then remove leading "Q"
+                    processed_date_str = date_str.replace('Quarter ', '').lstrip('Q') # "Q2 2025" -> "2 2025"
+                    quarter_str_num, year_str = processed_date_str.split(' ')
+                    quarter_str_num = quarter_str_num.zfill(2)
+                    month = (int(quarter_str_num) - 1) * 3 + 1
+                    return datetime(int(year_str), month, 1)
                 except ValueError:
                     # Try to extract quarter from a date
                     for fmt in ['%d %b %Y', '%Y-%m-%d']:
@@ -306,68 +330,115 @@ class OdashAPI(http.Controller):
             # Utiliser les valeurs structurées plutôt que de simples chaînes
             all_values = list(many2one_values.values())
             
-        elif field_type in ['date', 'datetime'] and interval and len(existing_values) >= 2:
+        elif field_type in ['date', 'datetime'] and interval:
             # Pour les dates, générer les dates intermédiaires si un intervalle est spécifié
-            try:
-                # Convertir en liste et traiter les dates
-                date_values = list(existing_values)
-                parsed_dates = []
+            # Cette partie a été simplifiée et la logique de plage par défaut ajoutée plus bas.
+            parsed_dates = []
+            all_values = list(existing_values) # Default to existing if no generation happens
+
+            if existing_values:
+                for date_str in existing_values:
+                    try:
+                        # L'utilisateur a ajouté `if interval is None: interval = 'month'` ici.
+                        # S'assurer que interval est toujours défini avant d'appeler _parse_date_from_string
+                        current_interval = interval if interval else 'month' # Defaulting to month
+                        parsed_date = self._parse_date_from_string(date_str, current_interval)
+                        if parsed_date:
+                            parsed_dates.append((parsed_date, date_str))
+                    except ValueError as e:
+                        _logger.warning(f"Impossible de parser la date existante '{date_str}' pour l'intervalle '{current_interval}': {e}")
+        
+            _logger.info(f"Débogage show_empty dates - {len(parsed_dates)} dates existantes parsées avec succès.")
+
+            # Logique de génération des dates (existantes, par défaut, ou une seule)
+            final_date_strings = []
+
+            if len(parsed_dates) >= 2:
+                _logger.info("Génération de dates basée sur >= 2 dates existantes.")
+                parsed_dates.sort(key=lambda x: x[0])
+                first_date_obj = parsed_dates[0][0]
+                last_date_obj = parsed_dates[-1][0]
+                current_interval = interval if interval else 'month'
+                generated_intermediate_strings = self._generate_intermediate_dates(first_date_obj, last_date_obj, current_interval)
                 
-                # Parser toutes les dates
-                for date_str in date_values:
-                    parsed_date = self._parse_date_from_string(date_str, interval)
-                    if parsed_date:
-                        parsed_dates.append((parsed_date, date_str))
+                # Combiner et dédoublonner
+                temp_combined_dates = {item[1] for item in parsed_dates} # Chaînes originales des dates parsées
+                for gen_date_str in generated_intermediate_strings:
+                    temp_combined_dates.add(gen_date_str)
                 
-                _logger.info(f"Débogage show_empty dates - valeurs existantes: {date_values}")
-                
-                if not parsed_dates:
-                    _logger.warning("Aucune date n'a pu être parsée correctement")
-                    return all_values
-                
-                # Trier les dates par ordre chronologique
-                parsed_dates.sort(key=lambda x: x[0])  # Tri par date (premier élément du tuple)
-                
-                # Trouver la première et dernière date
-                first_date = parsed_dates[0][0]  # Premier élément du premier tuple
-                last_date = parsed_dates[-1][0]  # Premier élément du dernier tuple
-                
-                _logger.info(f"Débogage show_empty dates - première date: {first_date}, dernière date: {last_date}")
-                
-                if first_date and last_date:
-                    # Générer toutes les dates entre la première et la dernière
-                    intermediate_dates = self._generate_intermediate_dates(
-                        first_date, last_date, interval)
-                    
-                    _logger.info(f"Débogage show_empty dates - dates intermédiaires générées: {intermediate_dates}")
-                    
-                    # Ajouter les dates manquantes
-                    for date_str in intermediate_dates:
-                        if date_str not in existing_values:
-                            all_values.append(date_str)
-                            _logger.info(f"Débogage show_empty dates - ajout date: {date_str}")
-                    
-                    # Re-trier toutes les dates chronologiquement
-                    # D'abord parser toutes les dates en objets datetime pour un tri chronologique
-                    date_objects = []
-                    for date_str in all_values:
-                        date_obj = self._parse_date_from_string(date_str, interval)
-                        if date_obj:
-                            date_objects.append((date_obj, date_str))
-                    
-                    # Trier par date
-                    date_objects.sort(key=lambda x: x[0])
-                    
-                    # Reconstruire la liste triée
-                    all_values = [item[1] for item in date_objects]
-                    _logger.info(f"Débogage show_empty dates - valeurs finales triées chronologiquement: {all_values}")
+                # Re-parser pour trier et formater correctement
+                # (Cette étape assure un tri chronologique strict et un formatage uniforme)
+                final_date_objects_for_sorting = []
+                for d_str in list(temp_combined_dates):
+                    try:
+                        dt_obj = self._parse_date_from_string(d_str, current_interval)
+                        if dt_obj:
+                            final_date_objects_for_sorting.append(dt_obj)
+                    except ValueError:
+                        _logger.warning(f"Erreur lors du re-parsing de la date combinée '{d_str}' pour le tri.")
+            
+                final_date_objects_for_sorting.sort()
+                final_date_strings = [self._format_date_obj_for_interval(dt, current_interval) for dt in final_date_objects_for_sorting]
+
+            elif len(parsed_dates) == 1:
+                _logger.info("Une seule date existante trouvée, utilisation de cette date.")
+                final_date_strings = [parsed_dates[0][1]] # Utiliser la chaîne originale
+        
+            else: # len(parsed_dates) == 0 (pas de dates existantes valides)
+                _logger.info("Aucune date existante valide, génération d'une plage par défaut.")
+                current_interval = interval if interval else 'month'
+                today = date.today()
+                start_date_default, end_date_default = None, None
+
+                if current_interval == 'day':
+                    end_date_default = today
+                    start_date_default = today - timedelta(days=6)
+                elif current_interval == 'week':
+                    start_date_default = today - timedelta(days=today.weekday())
+                    end_date_default = start_date_default + timedelta(days=6)
+                elif current_interval == 'month':
+                    start_date_default = today.replace(day=1)
+                    _, num_days = calendar.monthrange(today.year, today.month)
+                    end_date_default = today.replace(day=num_days)
+                elif current_interval == 'quarter':
+                    current_quarter = (today.month - 1) // 3 + 1
+                    start_month_of_quarter = (current_quarter - 1) * 3 + 1
+                    start_date_default = date(today.year, start_month_of_quarter, 1)
+                    end_month_of_quarter = start_month_of_quarter + 2
+                    _, end_day_of_end_month = calendar.monthrange(today.year, end_month_of_quarter)
+                    end_date_default = date(today.year, end_month_of_quarter, end_day_of_end_month)
+                elif current_interval == 'year':
+                    start_date_default = date(today.year, 1, 1)
+                    end_date_default = date(today.year, 12, 31)
+            
+                if start_date_default and end_date_default:
+                    final_date_strings = self._generate_intermediate_dates(start_date_default, end_date_default, current_interval)
                 else:
-                    _logger.warning("Débogage show_empty dates - Impossible de parser les dates first_date ou last_date")
-            except Exception as e:
-                _logger.warning(f"Error generating intermediate dates: {str(e)}")
+                    _logger.warning(f"Intervalle non géré pour la plage par défaut: {current_interval}. Retour des valeurs existantes (vides).")
+                    final_date_strings = list(existing_values) # Devrait être vide ici
+
+            all_values = final_date_strings
+            _logger.info(f"_get_all_possible_values (date) retourne: {all_values}")
         
         return all_values
-    
+
+    def _format_date_obj_for_interval(self, date_obj, interval):
+        if interval == 'day':
+            return date_obj.strftime('%d %b %Y')
+        elif interval == 'week':
+            # Retourne le format 'Www YYYY'
+            iso_year, iso_week, _ = date_obj.isocalendar()
+            return f"W{iso_week:02d} {iso_year}" # Ex: W16 2025
+        elif interval == 'month':
+            return date_obj.strftime('%B %Y')
+        elif interval == 'quarter':
+            quarter = (date_obj.month - 1) // 3 + 1
+            return f"Q{quarter} {date_obj.year}"
+        elif interval == 'year':
+            return date_obj.strftime('%Y')
+        _logger.warning(f"_format_date_obj_for_interval: Intervalle inconnu '{interval}' pour la date {date_obj}. Retour ISO.")
+        return date_obj.isoformat()
+
     def _collect_all_measures(self, data):
         """
         Collecte toutes les mesures présentes dans les données
@@ -509,12 +580,38 @@ class OdashAPI(http.Controller):
                 # Ajouter les combinaisons manquantes
                 data = self._add_missing_combinations(data, field_name, all_values, idx)
                 
-                # 3. Trier chronologiquement les données finales si c'est une date
+                # 4. Uniformiser le format des clés de date (si show_empty concerne une date)
+                if field_obj.type in ['date', 'datetime'] and interval:
+                    _logger.info(f"Uniformisation du format des clés pour l'intervalle '{interval}'")
+                    temp_data_reformatted = []
+                    for item in data:
+                        key_value = item.get('key')
+                        if key_value: # S'assurer qu'il y a une clé à traiter
+                            try:
+                                date_obj_for_reformat = self._parse_date_from_string(str(key_value), interval)
+                                if date_obj_for_reformat:
+                                    new_key = self._format_date_obj_for_interval(date_obj_for_reformat, interval)
+                                    item['key'] = new_key
+                                    # Mettre à jour également le domaine si présent et pertinent
+                                    if 'odash.domain' in item and item['odash.domain'] and item['odash.domain'][0][0] == field_name:
+                                        item['odash.domain'][0][2] = new_key
+                                    _logger.debug(f"Clé '{key_value}' reformatée en '{new_key}'")
+                                else:
+                                    _logger.warning(f"Impossible de parser la clé '{key_value}' pour reformatage.")
+                            except ValueError as e_reformat:
+                                _logger.warning(f"Erreur lors du parsing de la clé '{key_value}' pour reformatage: {e_reformat}")
+                        temp_data_reformatted.append(item)
+                    data = temp_data_reformatted
+
+                # 5. Trier chronologiquement les données finales si c'est une date
+                # (Anciennement étape 3)
                 if field_obj.type in ['date', 'datetime']:
                     # Convertir dates en objets datetime pour le tri
                     sorted_data = []
                     for item in data:
                         key_value = item.get('key')
+                        if interval is None:
+                            interval = 'month'
                         date_obj = self._parse_date_from_string(key_value, interval)
                         if date_obj:
                             sorted_data.append((date_obj, item))
@@ -540,7 +637,7 @@ class OdashAPI(http.Controller):
             date_format = '%d %b %Y'  # Format comme "11 Apr 2025"
         elif interval == 'week':
             step = timedelta(weeks=1)
-            date_format = '%Y-%W'  # Format comme "2025-16"
+            date_format = 'W%W %Y'  # Format comme "W16 2025"
         elif interval == 'month':
             # Pour les mois, on utilise une approche particulière
             month_dates = []
@@ -1119,11 +1216,14 @@ class OdashAPI(http.Controller):
                                 first_groupby_field = groupby_fields[0] if groupby_fields else None
 
                                 # Pour les champs date avec intervalle, extraire le nom de base
-                                if ':' in first_groupby_field:
-                                    base_field, interval = first_groupby_field.split(':')
-                                    field_name = base_field
+                                if first_groupby_field:
+                                    if ':' in first_groupby_field:
+                                        base_field, interval = first_groupby_field.split(':')
+                                        field_name = base_field
+                                    else:
+                                        field_name = first_groupby_field
                                 else:
-                                    field_name = first_groupby_field
+                                    field_name = None
 
                                 # Obtenir la valeur du premier groupby pour ce groupe
                                 group_value = group.get(first_groupby_field)
@@ -1137,7 +1237,7 @@ class OdashAPI(http.Controller):
 
                                 # Construire un domaine simplifié pour le premier groupby
                                 if first_groupby_value is not None:
-                                    row["odash.domain"] = [[field_name, '=', first_groupby_value]]
+                                    row["odash.domain"] = [[field_name, "=", first_groupby_value]]
                                 else:
                                     row["odash.domain"] = []
                                 data.append(row)
@@ -1169,7 +1269,7 @@ class OdashAPI(http.Controller):
                                             # For other fields, use the value directly
                                             row[field_name] = field_value
 
-                                    # Ajout du domain spécifique à l'ID du record uniquement
+                                    # Ajout du domaine spécifique à l'ID du record uniquement
                                     row["odash.domain"] = [["id", "=", record.get("id")]]
                                     data.append(row)
 
@@ -1436,7 +1536,11 @@ class OdashAPI(http.Controller):
         else:
             response_data = data
 
-        return ApiHelper.json_valid_response(response_data, status)
+        return Response(
+            json.dumps(response_data, cls=OdashboardJSONEncoder),
+            content_type='application/json',
+            status=status
+        )
 
     def _apply_sql_where_clause(self, query, model_name, domain):
         """
