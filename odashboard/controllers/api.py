@@ -1,16 +1,18 @@
-from .api_helper import ApiHelper
-
-from odoo import http
+# Imports
+from odoo import http, fields as odoo_fields 
 from odoo.http import request, Response
+from odoo.osv import expression 
 import json
 import logging
-import random
-from datetime import datetime, date, timedelta
+import itertools 
+from datetime import datetime, date, time, timedelta
 import calendar
+import re
+from dateutil.relativedelta import relativedelta
 
 _logger = logging.getLogger(__name__)
 
-# Custom JSON encoder to handle datetime objects
+# Custom JSON encoder for handling dates
 class OdashboardJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, (datetime, date)):
@@ -18,1569 +20,704 @@ class OdashboardJSONEncoder(json.JSONEncoder):
         return super(OdashboardJSONEncoder, self).default(obj)
 
 class OdashAPI(http.Controller):
-    """
-    Controller for Odashboard API endpoints
-    """
-
-    @http.route(['/api/odash/access'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
-    def get_access(self, **kw):
-        token = request.env['ir.config_parameter'].sudo().get_param('odashboard.api.token')
-        return ApiHelper.json_valid_response(token, 200)
-
-    @http.route(['/api/osolution/refresh-token/<string:uuid>/<string:key>'], type='http', auth='none', csrf=False, methods=['GET'], cors="*")
-    def refresh_token(self, uuid, key, **kw):
-        uuid_param = request.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
-        key_param = request.env['ir.config_parameter'].sudo().get_param('odashboard.key')
-
-        if uuid_param == uuid and key_param == key:
-            request.env["odash.dashboard"].sudo().update_auth_token()
-        return ApiHelper.json_valid_response("ok", 200)
-
-    @http.route(['/api/get/models'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
-    def get_models(self, **kw):
+    
+    def _build_response(self, data, status=200):
+        """Build a consistent JSON response with the given data and status."""
+        headers = {'Content-Type': 'application/json'}
+        return Response(json.dumps(data, cls=OdashboardJSONEncoder), 
+                       status=status, 
+                       headers=headers)
+    
+    def _parse_date_from_string(self, date_str, return_range=False):
+        """Parse a date string in various formats and return a datetime object.
+        If return_range is True, return a tuple of start and end dates for period formats.
         """
-        Return a list of models relevant for analytics, automatically filtering out technical models
-        
-        :return: JSON response with list of analytically relevant models
-        """
-        try:
-            _logger.info("API call: Fetching list of analytically relevant models")
-
-            # Create domain to filter models directly in the search
-            # 1. Must be non-transient
-            domain = [('transient', '=', False)]
-
-            # 2. Exclude technical models using NOT LIKE conditions
-            technical_prefixes = ['ir.', 'base.', 'bus.', 'base_import.',
-                                 'web.', 'mail.', 'auth.', 'report.',
-                                 'resource.', 'wizard.']
-            for prefix in technical_prefixes:
-                domain.append(('model', 'not like', f'{prefix}%'))
-
-            # Models starting with underscore
-            domain.append(('model', 'not like', '\\_%'))
-
-            """
-            # TODO : Améliorer le filtrage des modèles
-                     # 3. Include only analytical models using OR conditions with LIKE
-            analytical_domain = ['|'] * (14 - 1)  # 13 patterns minus 1
-            analytical_domain += [
-                ('model', 'like', 'sale.%'),
-                ('model', 'like', 'account.%'),
-                ('model', 'like', 'crm.%'),
-                ('model', 'like', 'product.%'),
-                ('model', 'like', 'purchase.%'),
-                ('model', 'like', 'stock.%'),
-                ('model', 'like', 'project.%'),
-                ('model', 'like', 'hr.%'),
-                ('model', 'like', 'pos.%'),
-                ('model', 'like', 'mrp.%'),
-                ('model', 'like', 'website_sale.%'),
-                ('model', 'like', 'event.%'),
-                ('model', 'like', 'marketing.%'),
-                ('model', 'like', 'res.%'),
-            ]
-            
-            # Combine all conditions
-            domain = domain + analytical_domain
-            
-            """
-
-            # Execute the optimized search
-            model_obj = request.env['ir.model'].sudo()
-            models = model_obj.search(domain)
-
-            _logger.info("Found %s analytical models", len(models))
-
-            # Format the response with the already filtered models
-            model_list = [{
-                'name': model.name,
-                'model': model.model,
-            } for model in models]
-
-            return ApiHelper.json_valid_response(model_list, 200)
-
-        except Exception as e:
-            _logger.error("Error in API get_models: %s", str(e))
-            error_response = {
-                'success': False,
-                'error': str(e)
-            }
-            response = Response(
-                json.dumps(error_response, cls=OdashboardJSONEncoder),
-                content_type='application/json',
-                status=500
-            )
-            return response
-
-
-    def _parse_date_from_string(self, date_str, interval):
-        """Analyser une chaîne de date et la convertir en objet datetime selon l'intervalle"""
-        _logger.info(f"Parsing date string: '{date_str}' with interval '{interval}'")
-        try:
-            if interval == 'day':
-                # Essayer différents formats pour le jour
-                # Format principal pour l'API Odash : '11 Apr 2025'
-                formats = ['%d %b %Y', '%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']
-                for fmt in formats:
-                    try:
-                        return datetime.strptime(date_str, fmt)
-                    except ValueError:
-                        continue
-                # Si aucun format ne fonctionne, signaler le problème
-                _logger.warning(f"Aucun format de date reconnu pour '{date_str}' avec intervalle 'day'")
-                return None
-            elif interval == 'week':
-                # Attempt 1: Format 'YYYY-Www' (e.g., '2023-W01')
-                try:
-                    _logger.debug(f"Parsing week format 'YYYY-Www' for '{date_str}'")
-                    year_str, week_str_num = date_str.split('-W')
-                    week_str_num = week_str_num.zfill(2) # Ensure two digits for week number
-                    # %Y: Year, %W: Week number (Mon as 1st day, 00-53), %w: Weekday (0-6, Sun=0). '-1' forces Monday.
-                    return datetime.strptime(f"{year_str}-{week_str_num}-1", "%Y-%W-%w")
-                except ValueError:
-                    # Attempt 2: Format 'Www YYYY' (e.g., 'W16 2025') or 'Week ww YYYY'
-                    _logger.debug(f"Parsing week format 'Www YYYY' or 'Week ww YYYY' for '{date_str}'")
-                    try:
-                        # Remove "Week " if present, then remove leading "W"
-                        processed_date_str = date_str.replace('Week ', '').lstrip('W') # "W16 2025" -> "16 2025"
-                        week_str_num, year_str = processed_date_str.split(' ')
-                        week_str_num = week_str_num.zfill(2)
-                        return datetime.strptime(f"{year_str}-{week_str_num}-1", "%Y-%W-%w")
-                    except ValueError:
-                        # Attempt 3: Try to parse as a specific date 'DD Mon YYYY' (e.g. Odoo might return the start of the week)
-                        _logger.debug(f"Parsing week format as specific date e.g. 'DD Mon YYYY' for '{date_str}'")
-                        try:
-                            # This format '%d %b %Y' needs to match the actual output if this case occurs.
-                            # Example: '15 Apr 2024' for week 16 of 2024
-                            dt = datetime.strptime(date_str, '%d %b %Y')
-                            # Return the first day of that week to be consistent
-                            return dt - timedelta(days=dt.weekday())
-                        except ValueError as e_final:
-                            _logger.error(f"Échec final du parsing de la date semaine '{date_str}': {e_final}")
-                            raise ValueError(f"Format de date semaine non reconnu: {date_str}") from e_final
-
-            elif interval == 'month':
-                # Common month formats
-                # Order: '%B %Y' (e.g., "April 2025"), then '%b %Y' (e.g., "Apr 2025"), then '%m/%Y', then '%Y-%m'
-                # Try to parse with formats that include day, then generalize
-                month_formats = [
-                    '%d %B %Y', '%d %b %Y', # Example: "01 April 2025", "01 Apr 2025"
-                    '%B %Y',    # Example: "April 2025"
-                    '%b %Y',    # Example: "Apr 2025"
-                    '%m/%Y',    # Example: "04/2025"
-                    '%Y-%m-%d', # Example: "2025-04-01"
-                    '%Y-%m',    # Example: "2025-04"
-                ]
-                for fmt in month_formats:
-                    try:
-                        dt = datetime.strptime(date_str, fmt)
-                        # For month interval, always return the first day of the month
-                        return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                    except ValueError:
-                        continue
-                _logger.error(f"Format de date mois non reconnu: {date_str}")
-                raise ValueError(f"Format de date mois non reconnu: {date_str}")
-
-            elif interval == 'quarter':
-                # Example 'Q2 2025' or 'Quarter 2 2025'
-                try:
-                    # Remove "Quarter " if present, then remove leading "Q"
-                    processed_date_str = date_str.replace('Quarter ', '').lstrip('Q') # "Q2 2025" -> "2 2025"
-                    quarter_str_num, year_str = processed_date_str.split(' ')
-                    quarter_str_num = quarter_str_num.zfill(2)
-                    month = (int(quarter_str_num) - 1) * 3 + 1
-                    return datetime(int(year_str), month, 1)
-                except ValueError:
-                    # Try to extract quarter from a date
-                    for fmt in ['%d %b %Y', '%Y-%m-%d']:
-                        try:
-                            dt = datetime.strptime(date_str, fmt)
-                            quarter = (dt.month - 1) // 3 + 1
-                            month = (quarter - 1) * 3 + 1
-                            return datetime(dt.year, month, 1)
-                        except ValueError:
-                            continue
-                return None
-            elif interval == 'year':
-                # Try different formats for year
-                try:
-                    return datetime.strptime(date_str, '%Y')
-                except ValueError:
-                    # Try to extract year from a full date
-                    for fmt in ['%d %b %Y', '%Y-%m-%d', '%b %Y']:
-                        try:
-                            dt = datetime.strptime(date_str, fmt)
-                            return datetime(dt.year, 1, 1)
-                        except ValueError:
-                            continue
-                return None
-                return None
-        except Exception as e:
-            _logger.warning(f"Error parsing date '{date_str}' with interval '{interval}': {e}")
+        if not date_str:
             return None
-
-    def _parse_groupby_field(self, groupby_field):
-        """
-        Analyse un champ groupBy et extrait field et interval
         
-        Args:
-            groupby_field: Champ groupBy (ancien ou nouveau format)
-            
-        Returns:
-            Tuple (field, interval)
-        """
-        if isinstance(groupby_field, str) and ':' in groupby_field:
-            # Ancien format
-            field, interval = groupby_field.split(':')
-            return field, interval
-        elif isinstance(groupby_field, dict):
-            # Nouveau format
-            return groupby_field.get('field'), groupby_field.get('interval')
+        # Week pattern (e.g., W16 2025)
+        week_pattern = re.compile(r'W(\d{1,2})\s+(\d{4})')
+        week_match = week_pattern.match(date_str)
+        if week_match:
+            week_num = int(week_match.group(1))
+            year = int(week_match.group(2))
+            # Get the first day of the week
+            first_day = datetime.strptime(f'{year}-{week_num}-1', '%Y-%W-%w').date()
+            if return_range:
+                last_day = first_day + timedelta(days=6)
+                return first_day, last_day
+            return first_day
         
-        return groupby_field, None
-    
-    def _collect_existing_values(self, data, field_name, idx):
-        """
-        Collecte les valeurs existantes pour un champ donné dans les données
-        
-        Args:
-            data: Les données à analyser
-            field_name: Nom du champ
-            idx: Index du niveau de groupBy
-            
-        Returns:
-            Ensemble des valeurs existantes
-        """
-        existing_values = set()
-        
-        # Premier niveau ou second niveau
-        if idx == 0:
-            for item in data:
-                key_value = item.get('key')
-                if key_value:
-                    existing_values.add(key_value)
-        else:
-            for item in data:
-                for key in item.keys():
-                    if '|' in key:
-                        parts = key.split('|')
-                        if len(parts) > idx:
-                            existing_values.add(parts[idx])
-        
-        return existing_values
-    
-    def _get_all_possible_values(self, field_obj, existing_values, idx=0, data=None, field_name=None, interval=None):
-        """
-        Obtient toutes les valeurs possibles d'un champ selon son type
-        
-        Args:
-            field_obj: L'objet champ Odoo
-            existing_values: Ensemble des valeurs existantes déjà trouvées
-            idx: Index du niveau de groupBy
-            data: Données existantes (pour extraire des informations)
-            field_name: Nom du champ
-            interval: Intervalle pour les champs date/datetime
-            
-        Returns:
-            Liste de toutes les valeurs possibles pour ce champ
-        """
-        field_type = field_obj.type
-        
-        # Traitement par défaut
-        all_values = list(existing_values)
-        
-        # Traitement spécifique selon le type de champ
-        if field_type == 'selection':
-            # Ajouter toutes les options de sélection
-            for value, _ in field_obj.selection:
-                str_value = str(value)
-                if str_value not in existing_values:
-                    all_values.append(str_value)
-                    
-        elif field_type == 'many2one' and data and field_name:
-            # Pour les champs many2one, nous devons gérer correctement les ID et noms
-            related_model = field_obj.comodel_name
-            related_records = request.env[related_model].sudo().search([])
-            
-            # Dictionnaire pour mapper les noms d'affichage aux IDs
-            many2one_values = {}
-            
-            # D'abord collecter les valeurs existantes et leurs IDs
-            if idx == 0:
-                # Premier niveau - les valeurs sont dans la clé principale
-                for item in data:
-                    key_value = item.get('key')
-                    domain = item.get('odash.domain', [])
-                    if key_value and domain:
-                        # Extraire l'ID du domain
-                        for field_expr, operator, value in domain:
-                            if field_expr == field_name and operator == '=':
-                                many2one_values[key_value] = {'name': key_value, 'id': value}
-                                break
-            
-            # Maintenant ajouter tous les enregistrements du modèle lié
-            for record in related_records:
-                if record.display_name not in many2one_values:
-                    many2one_values[record.display_name] = {
-                        'name': record.display_name,
-                        'id': record.id
-                    }
-            
-            # Utiliser les valeurs structurées plutôt que de simples chaînes
-            all_values = list(many2one_values.values())
-            
-        elif field_type in ['date', 'datetime'] and interval:
-            # Pour les dates, générer les dates intermédiaires si un intervalle est spécifié
-            # Cette partie a été simplifiée et la logique de plage par défaut ajoutée plus bas.
-            parsed_dates = []
-            all_values = list(existing_values) # Default to existing if no generation happens
-
-            if existing_values:
-                for date_str in existing_values:
-                    try:
-                        # L'utilisateur a ajouté `if interval is None: interval = 'month'` ici.
-                        # S'assurer que interval est toujours défini avant d'appeler _parse_date_from_string
-                        current_interval = interval if interval else 'month' # Defaulting to month
-                        parsed_date = self._parse_date_from_string(date_str, current_interval)
-                        if parsed_date:
-                            parsed_dates.append((parsed_date, date_str))
-                    except ValueError as e:
-                        _logger.warning(f"Impossible de parser la date existante '{date_str}' pour l'intervalle '{current_interval}': {e}")
-        
-            _logger.info(f"Débogage show_empty dates - {len(parsed_dates)} dates existantes parsées avec succès.")
-
-            # Logique de génération des dates (existantes, par défaut, ou une seule)
-            final_date_strings = []
-
-            if len(parsed_dates) >= 2:
-                _logger.info("Génération de dates basée sur >= 2 dates existantes.")
-                parsed_dates.sort(key=lambda x: x[0])
-                first_date_obj = parsed_dates[0][0]
-                last_date_obj = parsed_dates[-1][0]
-                current_interval = interval if interval else 'month'
-                generated_intermediate_strings = self._generate_intermediate_dates(first_date_obj, last_date_obj, current_interval)
-                
-                # Combiner et dédoublonner
-                temp_combined_dates = {item[1] for item in parsed_dates} # Chaînes originales des dates parsées
-                for gen_date_str in generated_intermediate_strings:
-                    temp_combined_dates.add(gen_date_str)
-                
-                # Re-parser pour trier et formater correctement
-                # (Cette étape assure un tri chronologique strict et un formatage uniforme)
-                final_date_objects_for_sorting = []
-                for d_str in list(temp_combined_dates):
-                    try:
-                        dt_obj = self._parse_date_from_string(d_str, current_interval)
-                        if dt_obj:
-                            final_date_objects_for_sorting.append(dt_obj)
-                    except ValueError:
-                        _logger.warning(f"Erreur lors du re-parsing de la date combinée '{d_str}' pour le tri.")
-            
-                final_date_objects_for_sorting.sort()
-                final_date_strings = [self._format_date_obj_for_interval(dt, current_interval) for dt in final_date_objects_for_sorting]
-
-            elif len(parsed_dates) == 1:
-                _logger.info("Une seule date existante trouvée, utilisation de cette date.")
-                final_date_strings = [parsed_dates[0][1]] # Utiliser la chaîne originale
-        
-            else: # len(parsed_dates) == 0 (pas de dates existantes valides)
-                _logger.info("Aucune date existante valide, génération d'une plage par défaut.")
-                current_interval = interval if interval else 'month'
-                today = date.today()
-                start_date_default, end_date_default = None, None
-
-                if current_interval == 'day':
-                    end_date_default = today
-                    start_date_default = today - timedelta(days=6)
-                elif current_interval == 'week':
-                    start_date_default = today - timedelta(days=today.weekday())
-                    end_date_default = start_date_default + timedelta(days=6)
-                elif current_interval == 'month':
-                    start_date_default = today.replace(day=1)
-                    _, num_days = calendar.monthrange(today.year, today.month)
-                    end_date_default = today.replace(day=num_days)
-                elif current_interval == 'quarter':
-                    current_quarter = (today.month - 1) // 3 + 1
-                    start_month_of_quarter = (current_quarter - 1) * 3 + 1
-                    start_date_default = date(today.year, start_month_of_quarter, 1)
-                    end_month_of_quarter = start_month_of_quarter + 2
-                    _, end_day_of_end_month = calendar.monthrange(today.year, end_month_of_quarter)
-                    end_date_default = date(today.year, end_month_of_quarter, end_day_of_end_month)
-                elif current_interval == 'year':
-                    start_date_default = date(today.year, 1, 1)
-                    end_date_default = date(today.year, 12, 31)
-            
-                if start_date_default and end_date_default:
-                    final_date_strings = self._generate_intermediate_dates(start_date_default, end_date_default, current_interval)
-                else:
-                    _logger.warning(f"Intervalle non géré pour la plage par défaut: {current_interval}. Retour des valeurs existantes (vides).")
-                    final_date_strings = list(existing_values) # Devrait être vide ici
-
-            all_values = final_date_strings
-            _logger.info(f"_get_all_possible_values (date) retourne: {all_values}")
-        
-        return all_values
-
-    def _format_date_obj_for_interval(self, date_obj, interval):
-        if interval == 'day':
-            return date_obj.strftime('%d %b %Y')
-        elif interval == 'week':
-            # Retourne le format 'Www YYYY'
-            iso_year, iso_week, _ = date_obj.isocalendar()
-            return f"W{iso_week:02d} {iso_year}" # Ex: W16 2025
-        elif interval == 'month':
-            return date_obj.strftime('%B %Y')
-        elif interval == 'quarter':
-            quarter = (date_obj.month - 1) // 3 + 1
-            return f"Q{quarter} {date_obj.year}"
-        elif interval == 'year':
-            return date_obj.strftime('%Y')
-        _logger.warning(f"_format_date_obj_for_interval: Intervalle inconnu '{interval}' pour la date {date_obj}. Retour ISO.")
-        return date_obj.isoformat()
-
-    def _collect_all_measures(self, data):
-        """
-        Collecte toutes les mesures présentes dans les données
-        
-        Args:
-            data: Les données à analyser
-            
-        Returns:
-            Ensemble des mesures
-        """
-        all_measures = set()
-        for item in data:
-            for key in item.keys():
-                if '|' in key:
-                    parts = key.split('|')
-                    measure = parts[0]
-                    all_measures.add(measure)
-                elif key not in ['key', 'odash.domain']:
-                    all_measures.add(key)
-        return all_measures
-    
-    def _add_missing_combinations(self, data, field_name, all_values, idx, all_measures=None):
-        """
-        Ajoute les combinaisons manquantes selon show_empty
-        
-        Args:
-            data: Les données existantes
-            field_name: Nom du champ
-            all_values: Toutes les valeurs possibles
-            idx: Index du niveau de groupBy
-            all_measures: Ensemble des mesures (pour le second niveau)
-            
-        Returns:
-            Données enrichies
-        """
-        if idx == 0:  # Premier niveau de groupby
-            existing_keys = set(item.get('key') for item in data)
-            for value in all_values:
-                value_name = value.get('name') if isinstance(value, dict) else value
-                value_id = value.get('id') if isinstance(value, dict) else value
-                
-                if value_name not in existing_keys:
-                    # Créer un nouveau point de données pour la valeur manquante
-                    new_point = {
-                        'key': value_name,
-                        'odash.domain': [[field_name, '=', value_id]]
-                    }
-                    
-                    # Ajouter des valeurs zéro pour toutes les mesures
-                    for item in data:
-                        for key, _ in item.items():
-                            if key not in ['key', 'odash.domain']:
-                                new_point[key] = 0
-                    
-                    # Ajouter le nouveau point aux données
-                    data.append(new_point)
-        else:  # Niveau secondaire de groupby
-            if not all_measures:
-                all_measures = self._collect_all_measures(data)
-                
-            # Pour chaque point de données, s'assurer que toutes les combinaisons existent
-            for item in data:
-                for measure in all_measures:
-                    for value in all_values:
-                        value_name = value.get('name') if isinstance(value, dict) else value
-                        
-                        # Construire la clé composée pour cette mesure et cette valeur
-                        composed_key = f"{measure}|{value_name}"
-                        
-                        # Si cette clé n'existe pas, ajouter avec valeur zéro
-                        if composed_key not in item:
-                            item[composed_key] = 0
-        
-        return data
-    
-    def _handle_show_empty(self, data, model_obj, group_by_list):
-        """
-        Traite la fonctionnalité show_empty pour les données de groupBy
-        
-        Args:
-            data: Les données déjà groupées
-            model_obj: L'objet modèle Odoo
-            group_by_list: Liste des configurations de groupBy
-            
-        Returns:
-            Les données enrichies avec les valeurs manquantes selon show_empty
-        """
-        # Collecter les configurations show_empty
-        show_empty_configs = []
-        for idx, group_by in enumerate(group_by_list):
-            field = group_by.get('field')
-            interval = group_by.get('interval')
-            show_empty = group_by.get('show_empty', False)
-            
-            if field:
-                show_empty_configs.append({
-                    'field': field,
-                    'interval': interval,
-                    'show_empty': show_empty,
-                    'index': idx
-                })
-        
-        # Filtrer les configurations avec show_empty activé
-        show_empty_configs_active = [config for config in show_empty_configs if config.get('show_empty')]
-        
-        _logger.info(f"Débogage - Configurations show_empty: {show_empty_configs}")
-        _logger.info(f"Débogage - Configurations show_empty actives: {show_empty_configs_active}")
-        
-        if show_empty_configs_active:
-            # Chercher d'abord une configuration avec une date
-            date_configs = [config for config in show_empty_configs_active 
-                if model_obj._fields.get(config.get('field')) and 
-                model_obj._fields.get(config.get('field')).type in ['date', 'datetime']]
-            
-            if date_configs:
-                # Priorité aux dates si présentes
-                first_show_empty = date_configs[0]
-                _logger.info(f"Débogage - Config date trouvée: {first_show_empty}")
+        # Month pattern (e.g., January 2025 or 2025-01)
+        month_pattern = re.compile(r'(\w+)\s+(\d{4})|(\d{4})-(\d{2})')
+        month_match = month_pattern.match(date_str)
+        if month_match:
+            if month_match.group(1) and month_match.group(2):
+                # Format: January 2025
+                month_name = month_match.group(1)
+                year = int(month_match.group(2))
+                month_num = datetime.strptime(month_name, '%B').month
             else:
-                # Sinon prendre la première config active
-                first_show_empty = show_empty_configs_active[0]
-                _logger.info(f"Débogage - Première config show_empty: {first_show_empty}")
+                # Format: 2025-01
+                year = int(month_match.group(3))
+                month_num = int(month_match.group(4))
             
-            # Récupérer les informations du champ
-            field_name = first_show_empty.get('field')
-            idx = first_show_empty.get('index')
-            interval = first_show_empty.get('interval')
-            
-            # Obtenir l'objet champ pour déterminer son type
-            field_obj = model_obj._fields.get(field_name)
-            if field_obj:
-                # Collecter les valeurs existantes
-                existing_values = self._collect_existing_values(data, field_name, idx)
-                
-                # Obtenir toutes les valeurs possibles selon le type de champ
-                all_values = self._get_all_possible_values(
-                    field_obj, existing_values, idx, data, field_name, interval)
-                
-                # Ajouter les combinaisons manquantes
-                data = self._add_missing_combinations(data, field_name, all_values, idx)
-                
-                # 4. Uniformiser le format des clés de date (si show_empty concerne une date)
-                if field_obj.type in ['date', 'datetime'] and interval:
-                    _logger.info(f"Uniformisation du format des clés pour l'intervalle '{interval}'")
-                    temp_data_reformatted = []
-                    for item in data:
-                        key_value = item.get('key')
-                        if key_value: # S'assurer qu'il y a une clé à traiter
-                            try:
-                                date_obj_for_reformat = self._parse_date_from_string(str(key_value), interval)
-                                if date_obj_for_reformat:
-                                    new_key = self._format_date_obj_for_interval(date_obj_for_reformat, interval)
-                                    item['key'] = new_key
-                                    # Mettre à jour également le domaine si présent et pertinent
-                                    if 'odash.domain' in item and item['odash.domain'] and item['odash.domain'][0][0] == field_name:
-                                        item['odash.domain'][0][2] = new_key
-                                    _logger.debug(f"Clé '{key_value}' reformatée en '{new_key}'")
-                                else:
-                                    _logger.warning(f"Impossible de parser la clé '{key_value}' pour reformatage.")
-                            except ValueError as e_reformat:
-                                _logger.warning(f"Erreur lors du parsing de la clé '{key_value}' pour reformatage: {e_reformat}")
-                        temp_data_reformatted.append(item)
-                    data = temp_data_reformatted
-
-                # 5. Trier chronologiquement les données finales si c'est une date
-                # (Anciennement étape 3)
-                if field_obj.type in ['date', 'datetime']:
-                    # Convertir dates en objets datetime pour le tri
-                    sorted_data = []
-                    for item in data:
-                        key_value = item.get('key')
-                        if interval is None:
-                            interval = 'month'
-                        date_obj = self._parse_date_from_string(key_value, interval)
-                        if date_obj:
-                            sorted_data.append((date_obj, item))
-                    
-                    # Trier par date
-                    sorted_data.sort(key=lambda x: x[0])
-                    
-                    # Reconstruire la liste triée
-                    data = [item[1] for item in sorted_data]
-                    _logger.info(f"Tri final des données par date - {len(data)} éléments triés")
+            if return_range:
+                first_day = date(year, month_num, 1)
+                last_day = date(year, month_num, calendar.monthrange(year, month_num)[1])
+                return first_day, last_day
+            return date(year, month_num, 1)
         
-        return data
-
-    def _generate_intermediate_dates(self, start_date, end_date, interval):
-        """Générer une liste de dates intermédiaires entre start_date et end_date (exclusif)"""
-        _logger.info(f"Génération des dates entre {start_date} et {end_date} avec intervalle '{interval}'")
-        intermediate_dates = []
-        current_date = start_date
+        # Standard date format
+        try:
+            parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            if return_range:
+                return parsed_date, parsed_date
+            return parsed_date
+        except ValueError:
+            pass
         
-        # Déterminer le format et l'incrément selon l'intervalle
-        if interval == 'day':
-            step = timedelta(days=1)
-            date_format = '%d %b %Y'  # Format comme "11 Apr 2025"
-        elif interval == 'week':
-            step = timedelta(weeks=1)
-            date_format = 'W%W %Y'  # Format comme "W16 2025"
-        elif interval == 'month':
-            # Pour les mois, on utilise une approche particulière
-            month_dates = []
-            current_month = start_date.replace(day=1)
-            
-            while current_month < end_date:
-                # Ajouter au format "Apr 2025"
-                month_dates.append(current_month.strftime('%b %Y'))
-                
-                # Passer au mois suivant
-                month = current_month.month + 1
-                year = current_month.year
-                
-                if month > 12:
-                    month = 1
-                    year += 1
-                
-                current_month = current_month.replace(year=year, month=month)
-                
-            return month_dates
-        elif interval == 'quarter':
-            # Pour les trimestres, une approche spécifique
-            quarter_dates = []
-            current_quarter = start_date.replace(day=1, month=((start_date.month-1)//3)*3 + 1)
-            
-            while current_quarter < end_date:
-                quarter = ((current_quarter.month - 1) // 3) + 1
-                quarter_dates.append(f"Q{quarter} {current_quarter.year}")
-                
-                # Passer au trimestre suivant
-                month = current_quarter.month + 3
-                year = current_quarter.year
-                
-                if month > 12:
-                    month = month - 12
-                    year += 1
-                
-                current_quarter = current_quarter.replace(year=year, month=month)
-                
-            return quarter_dates
-        elif interval == 'year':
-            # Pour les années
-            year_dates = []
-            for year in range(start_date.year + 1, end_date.year):
-                year_dates.append(str(year))
-            return year_dates
-        else:
-            # Intervalle inconnu
+        # ISO format
+        try:
+            parsed_date = datetime.fromisoformat(date_str).date()
+            if return_range:
+                return parsed_date, parsed_date
+            return parsed_date
+        except ValueError:
+            pass
+        
+        return None
+    
+    def _get_field_values(self, model, field_name, domain=None):
+        """Get all possible values for a field, used for show_empty functionality."""
+        if not domain:
+            domain = []
+        
+        field_info = model._fields.get(field_name)
+        if not field_info:
             return []
         
-        # Pour day, week et les autres intervalles simples
-        # On utilise l'approche par incréments de timedelta
-        current_date = current_date + step  # On commence juste après la date de début
+        if field_info.type == 'selection':
+            # Return all selection options
+            return [key for key, _ in field_info.selection]
         
-        while current_date < end_date:
-            intermediate_dates.append(current_date.strftime(date_format))
-            current_date += step
+        elif field_info.type == 'many2one':
+            # Return all possible values for the relation
+            relation_model = model.env[field_info.comodel_name]
+            rel_values = relation_model.search_read([], ['id', 'display_name'])
+            return [{'id': r['id'], 'display_name': r['display_name']} for r in rel_values]
         
-        return intermediate_dates
-
-    def _build_response(self, data, status=200):
-        """Build standardized API response"""
-        return Response(
-            json.dumps(data, cls=OdashboardJSONEncoder),
-            content_type='application/json',
-            status=status
-        )
-
-    @http.route(['/api/get/dashboard'], type='http', auth='none', csrf=False, methods=['POST'], cors="*")
-    def get_visualization_data(self, **kw):
-        """
-        Process the dashboard configuration and return data in the required format
+        elif field_info.type in ['date', 'datetime']:
+            # This will be handled separately based on the data range and interval
+            return []
         
-        Accepts POST requests with JSON body containing one or multiple visualization configurations.
-        
-        Expected payload format for single configuration:
-        {
-            "id": string,
-            "model": string,
-            "type": "graph" | "table" | "block",
-            "block_options": {
-                "field": string,
-                "aggregation": "count" | "sum" | "avg" | "min" | "max" | "count_distinct"
-            },
-            "data_source": {
-                "domain": []
-            }
-        }
-        
-        Expected payload format for multiple configurations:
-        [
-            {
-                "id": string,
-                "model": string,
-                "type": "graph" | "table" | "block",
-                ...
-            },
-            {
-                "id": string,
-                "model": string, 
-                "type": "graph" | "table" | "block",
-                ...
-            }
-        ]
-        
-        :return: JSON response with the visualization data
-        """
-        try:
-            params = self._extract_post_data(request, kw)
-
-            _logger.info("API call: Params extracted: %s", type(params))
-
-            # Check if params is a list (multiple configurations) or dict (single configuration)
-            if isinstance(params, list):
-                _logger.info("Processing multiple configurations")
-                multiple_configs = params
-            else:
-                _logger.info("Processing single configuration")
-                multiple_configs = [params]
-
-            # Process each configuration
-            response_data = []
-
-            for config in multiple_configs:
-                # Extract configuration fields
-                config_id = config.get('id', '')
-                model_name = config.get('model', '')
-                visualization_type = config.get('type', '')
-
-                _logger.info("API call: Processing dashboard data for config ID: %s, model: %s, type: %s",
-                            config_id, model_name, visualization_type)
-
-                # Parameter validation
-                if not visualization_type:
-                    continue  # Skip invalid configurations
-
-                if not model_name:
-                    continue  # Skip invalid configurations
-
-                if not config_id:
-                    continue  # Skip invalid configurations
-
-                # Validate that the type is one of the allowed values
-                allowed_types = ['graph', 'table', 'block']
-                if visualization_type not in allowed_types:
-                    continue  # Skip invalid configurations
-
-
-                # Generate data based on visualization type
-                visualization_data = None
-
-                if visualization_type == 'graph':
-                    # Get real data for a graph
-                    graph_options = config.get('graph_options', {})
-                    measures = graph_options.get('measures', [])
-
-                    # Get domain, groupby and orderby from configuration
-                    data_source = config.get('data_source', {})
-                    domain = data_source.get('domain', [])
-                    
-                    # Modification: groupBy devient un tableau d'objets
-                    group_by_list = data_source.get('groupBy', [])
-                    if isinstance(group_by_list, dict):  # Pour compatibilité avec l'ancien format
-                        group_by_list = [group_by_list] if group_by_list else []
-                        
-                    # Modification: orderBy devient un tableau d'objets
-                    order_by_list = data_source.get('orderBy', [])
-                    if isinstance(order_by_list, dict):  # Pour compatibilité avec l'ancien format
-                        order_by_list = [order_by_list] if order_by_list else []
-                        
-                    _logger.info("Generating graph data for model: %s, with measures: %s, groupby: %s",
-                                model_name, measures, group_by_list)
-                    
-                    try:
-                        # Check if model exists
-                        model_obj = request.env[model_name].sudo()
-
-                        # If no measures specified, use count
-                        if not measures:
-                            measures = [{'field': 'id', 'aggregation': 'count', 'displayName': 'Count'}]
-
-                        # Fields to group by - support de multiple groupby
-                        groupby_fields = []
-                        
-                        # Si group_by_list n'est pas vide, on l'utilise
-                        if group_by_list:
-                            for group_by in group_by_list:
-                                field = group_by.get('field')
-                                interval = group_by.get('interval')
-                                
-                                if field:
-                                    # Nouveau format: field et interval sont séparés
-                                    # Vérifier si on a un intervalle spécifié séparément
-                                    if interval and ':' not in field:
-                                        # Si le champ est un champ date et qu'un intervalle est spécifié
-                                        field_obj = model_obj._fields.get(field)
-                                        if field_obj and field_obj.type in ['date', 'datetime']:
-                                            # Format pour Odoo: field:interval
-                                            field_with_interval = f"{field}:{interval}"
-                                            groupby_fields.append(field_with_interval)
-                                        else:
-                                            # Si ce n'est pas un champ date, on ignore l'intervalle
-                                            _logger.warning(
-                                                "Interval '%s' specified for non-date field '%s', ignoring interval",
-                                                interval, field
-                                            )
-                                            groupby_fields.append(field)
-                                    else:
-                                        # Compatibilité avec l'ancien format où le field contient déjà l'intervalle
-                                        groupby_fields.append(field)
-                        
-                        # Pour les blocks, on n'utilise pas de groupby par défaut
-                        # Pour les autres types (graph, table), on utilise create_date:month par défaut
-                        if not groupby_fields and visualization_type != 'block':
-                            groupby_fields.append('create_date:month')
-                        
-                        # Field to group by
-                        #groupby_field = group_by.get('field') if group_by else None
-                        #if not groupby_field:
-                        #    # Default to grouping by creation month
-                        #    groupby_field = 'create_date:month'
-
-                        # Build the list of fields to aggregate for read_group
-                        aggregation_fields = []
-                        aggregation_names = {}
-
-                        for measure in measures:
-                            field_name = measure.get('field')
-                            aggregation = measure.get('aggregation', 'sum')  # Default: sum
-                            display_name = measure.get('displayName', field_name)
-
-                            if field_name:
-                                # Check if field exists
-                                if field_name in model_obj._fields or field_name == 'id':
-                                    # In read_group, we just pass the field name, not the aggregation type
-                                    if field_name not in aggregation_fields and field_name != 'id':
-                                        aggregation_fields.append(field_name)
-
-                                    # Store the desired aggregation for each field
-                                    aggregation_names[field_name] = {
-                                        'display': display_name,
-                                        'aggregation': aggregation
-                                    }
-
-                        # Prepare data based on chart type
-                        chart_type = graph_options.get('chartType', 'bar')
-
-                        # Set order if specified
-                        orderby = None
-                        if order_by_list and len(order_by_list) > 0:
-                            # On utilise le premier orderBy du tableau
-                            first_order = order_by_list[0]
-                            if first_order.get('field'):
-                                orderby_field = first_order.get('field')
-                                direction = first_order.get('direction', 'asc')
-                                
-                                # Vérifier si le champ de tri est valide pour read_group
-                                # Dans read_group, l'orderby ne peut être que:
-                                # 1. Le champ de groupby
-                                # 2. Un champ agrégé
-                                is_valid_orderby = False
-                                
-                                # Vérifier si c'est un champ de groupby
-                                if orderby_field in groupby_fields:
-                                    is_valid_orderby = True
-                                    
-                                # Vérifier si c'est un champ agrégé
-                                elif orderby_field in aggregation_fields:
-                                    is_valid_orderby = True
-                                    
-                                # Si valide, construire l'orderby
-                                if is_valid_orderby:
-                                    orderby = f"{orderby_field} {direction}"
-                                else:
-                                    _logger.warning(
-                                        "Order field '%s' is not a valid groupby field nor aggregate. "
-                                        "In read_group, you can only order by the groupby field or an aggregated field. "
-                                        "Ignoring orderby.", orderby_field
-                                    )
-                        
-                        # Limit number of data points (for performance)
-                        limit = 100
-
-                        # Get grouped data - support de multiple groupby
-                        groups = model_obj.read_group(
-                            domain=domain,
-                            fields=aggregation_fields,
-                            groupby=groupby_fields,
-                            orderby=orderby,
-                            limit=limit,
-                            lazy=False
-                        )
-
-                        # Format data for response
-                        data = []
-                        
-                        # Fonction pour extraire les valeurs de groupby dans un format standardisé
-                        def extract_group_values(group, groupby_fields):
-                            group_values = []
-                            
-                            for field in groupby_fields:
-                                # Pour les champs date avec intervalle (ex: create_date:month)
-                                if ':' in field:
-                                    base_field, interval = field.split(':')
-                                    group_value = group.get(field)
-                                    if group_value:
-                                        group_values.append(str(group_value))
-                                    else:
-                                        group_values.append("Undefined")
-                                else:
-                                    # Pour les champs standards
-                                    group_value = group.get(field)
-                                    if isinstance(group_value, tuple) and len(group_value) >= 2:
-                                        # Many2one fields return (id, name)
-                                        group_values.append(str(group_value[1]))
-                                    else:
-                                        # For other field types
-                                        group_values.append(str(group_value) if group_value is not None else "Undefined")
-                            
-                            return group_values
-                        
-                        # Nouvelle structure pour regrouper par première valeur de groupby
-                        grouped_data = {}
-                        
-                        for group in groups:
-                            # Pour le premier groupby, on utilise la clé "key" 
-                            # Pour les autres groupby, on ajoute la valeur après un pipe aux noms des champs
-                            group_values = extract_group_values(group, groupby_fields)
-                            
-                            # Première valeur de groupby comme clé principale 
-                            primary_key = group_values[0] if group_values else "Undefined"
-
-                            # Récupérer le domaine pour le premier groupby uniquement
-                            if not groupby_fields:
-                                # Si pas de groupby, on ne peut pas récupérer de domaine spécifique
-                                first_groupby_field = None
-                            else:
-                                first_groupby_field = groupby_fields[0] if groupby_fields else None
-
-                            # Pour les champs date avec intervalle, extraire le nom de base
-                            if first_groupby_field:
-                                if ':' in first_groupby_field:
-                                    base_field, interval = first_groupby_field.split(':')
-                                    field_name = base_field
-                                else:
-                                    field_name = first_groupby_field
-                            else:
-                                field_name = None
-
-                            # Obtenir la valeur du premier groupby pour ce groupe
-                            group_value = group.get(first_groupby_field) if first_groupby_field else None
-                            first_groupby_value = None
-
-                            if isinstance(group_value, tuple) and len(group_value) >= 2:
-                                # Si c'est un many2one, prendre l'ID
-                                first_groupby_value = group_value[0]
-                            else:
-                                first_groupby_value = group_value
-
-                            # Construire un domaine simplifié pour le premier groupby
-                            if first_groupby_value is not None:
-                                # On n'inclut pas le domain original, seulement la condition sur le premier groupby
-                                first_groupby_domain = [[field_name, "=", first_groupby_value]] if field_name else []
-                            else:
-                                first_groupby_domain = []
-                            
-                            # Initialiser l'entrée dans grouped_data si elle n'existe pas
-                            if primary_key not in grouped_data:
-                                grouped_data[primary_key] = {
-                                    "key": primary_key,
-                                    "odash.domain": first_groupby_domain
-                                }
-                            
-                            # Add measures
-                            for measure in measures:
-                                field_name = measure.get('field')
-                                aggregation = measure.get('aggregation', 'sum')
-                                
-                                if field_name:
-                                    measure_value = None
-                                    
-                                    # Key name depends on aggregation type
-                                    if aggregation == 'count':
-                                        # For count, Odoo automatically adds a special field
-                                        if f"{groupby_fields[0]}_count" in group:
-                                            measure_value = group.get(f"{groupby_fields[0]}_count", 0)
-                                        else:
-                                            measure_value = len(group.get('__domain', []))
-                                    else:
-                                        # For other aggregations, Odoo calculates automatically based on field type
-                                        measure_value = group.get(field_name, 0)
-                                    
-                                    # Construction de la clé avec pipe pour groupby multiples
-                                    if len(group_values) > 1:
-                                        # Format: field_name|second_groupby|third_groupby|...
-                                        field_key = field_name + '|' + '|'.join(group_values[1:])
-                                    else:
-                                        field_key = field_name
-                                    
-                                    # Add value to data point with field_key
-                                    grouped_data[primary_key][field_key] = measure_value
-                        
-                        # Convertir le dictionnaire en liste
-                        data = list(grouped_data.values())
-                        
-                        # Fonctionnalité show_intermediate_dates supprimée comme demandé
-                        
-                        # 1. Traiter le show_empty pour un seul niveau de groupBy
-                        group_by_list = data_source.get('groupBy', [])
-                        if isinstance(group_by_list, list) and len(group_by_list) > 0:
-                            # Utiliser la méthode auxiliaire pour traiter show_empty
-                            data = self._handle_show_empty(data, model_obj, group_by_list)
-
-                    except Exception as e:
-                        _logger.error("Error generating graph data: %s", str(e))
-                        # Retourner un objet d'erreur standardisé au lieu d'une valeur de fallback
-                        return_data = {
-                            'success': False,
-                            'error': str(e)
-                        }
-                        return self._build_response(return_data, status=500)
-
-                    # Prepare response data
-                    visualization_data = {
-                        config_id: {
-                            "data": data,
-                        }
-                    }
-
-                elif visualization_type == 'table':
-                    # Get table configuration
-                    table_options = config.get('table_options', {})
-                    columns = table_options.get('columns', [])
-                    page_size = table_options.get('pageSize', 10)
-
-                    # Get domain, groupby and orderby from configuration
-                    data_source = config.get('data_source', {})
-                    domain = data_source.get('domain', [])
-                    
-                    # Modification: groupBy devient un tableau d'objets
-                    group_by_list = data_source.get('groupBy', [])
-                    if isinstance(group_by_list, dict):  # Pour compatibilité avec l'ancien format
-                        group_by_list = [group_by_list] if group_by_list else []
-                        
-                    # Modification: orderBy devient un tableau d'objets
-                    order_by_list = data_source.get('orderBy', [])
-                    if isinstance(order_by_list, dict):  # Pour compatibilité avec l'ancien format
-                        order_by_list = [order_by_list] if order_by_list else []
-                        
-                    _logger.info("Generating table data for model: %s, with columns: %s",
-                                model_name, columns)
-
-                    try:
-                        # Check if model exists
-                        model_obj = request.env[model_name].sudo()
-
-                        # Prepare fields to read from database
-                        fields_to_read = []
-                        for column in columns:
-                            field_name = column.get('field')
-                            if field_name:
-                                fields_to_read.append(field_name)
-
-                        # Build the order parameter for Odoo search
-                        order = None
-                        if order_by_list and len(order_by_list) > 0:
-                            # On utilise le premier orderBy du tableau
-                            first_order = order_by_list[0]
-                            if first_order.get('field'):
-                                direction = first_order.get('direction', 'asc')
-                                order = f"{first_order.get('field')} {direction}"
-                        
-                        # Handle groupby
-                        if group_by_list and len(group_by_list) > 0:
-                            # In Odoo, we can implement groupby using read_group
-                            groupby_fields = []
-                            for group_by in group_by_list:
-                                field = group_by.get('field')
-                                interval = group_by.get('interval')
-                                
-                                if field:
-                                    # Nouveau format: field et interval sont séparés
-                                    # Vérifier si on a un intervalle spécifié séparément
-                                    if interval and ':' not in field:
-                                        # Si le champ est un champ date et qu'un intervalle est spécifié
-                                        field_obj = model_obj._fields.get(field)
-                                        if field_obj and field_obj.type in ['date', 'datetime']:
-                                            # Format pour Odoo: field:interval
-                                            field_with_interval = f"{field}:{interval}"
-                                            groupby_fields.append(field_with_interval)
-                                        else:
-                                            # Si ce n'est pas un champ date, on ignore l'intervalle
-                                            _logger.warning(
-                                                "Interval '%s' specified for non-date field '%s', ignoring interval",
-                                                interval, field
-                                            )
-                                            groupby_fields.append(field)
-                                    else:
-                                        # Compatibilité avec l'ancien format où le field contient déjà l'intervalle
-                                        groupby_fields.append(field)
-                            
-                            # Si aucun groupby n'est spécifié, on ne fait pas de groupby
-                            if not groupby_fields:
-                                groupby_fields = []
-                        
-                            # Fields to aggregate
-                            aggregation_fields = []
-                            for column in columns:
-                                field_name = column.get('field')
-                                if field_name and field_name != groupby_fields[0]:
-                                    # Only add fields that can be aggregated
-                                    field_info = model_obj._fields.get(field_name)
-                                    if field_info and field_info.type in ['integer', 'float', 'monetary']:
-                                        aggregation_fields.append(field_name)
-
-                            # Build a valid orderby for read_group
-                            # When using read_group, the orderby must be based on an aggregation field
-                            # or the groupby field itself
-                            read_group_orderby = None
-                            if order_by_list and len(order_by_list) > 0:
-                                first_order = order_by_list[0]
-                                order_field = first_order.get('field')
-                                direction = first_order.get('direction', 'asc')
-
-                                # Vérifier si le champ de tri est valide pour read_group
-                                is_valid_orderby = False
-                                
-                                # Vérifier si c'est un champ de groupby
-                                if groupby_fields and order_field == groupby_fields[0]:
-                                    is_valid_orderby = True
-                                    read_group_orderby = f"{order_field} {direction}"
-                                    
-                                # Vérifier si c'est un champ agrégé
-                                elif order_field in aggregation_fields:
-                                    is_valid_orderby = True
-                                    read_group_orderby = f"{order_field} {direction}"
-                                
-                                # Si non valide, utiliser le groupby comme fallback
-                                if not is_valid_orderby and groupby_fields:
-                                    _logger.warning(
-                                        "Order field '%s' is not a valid groupby field nor aggregate. "
-                                        "Using groupby field as fallback.", order_field
-                                    )
-                                    read_group_orderby = f"{groupby_fields[0] if groupby_fields else 'id'} asc"
-                        
-                            # Get the results grouped by the field
-                            groups = model_obj.read_group(
-                                domain=domain,
-                                fields=([] if not groupby_fields else [groupby_fields[0]]) + aggregation_fields,
-                                groupby=([] if not groupby_fields else [groupby_fields[0]]),
-                                orderby=read_group_orderby,
-                                limit=page_size
-                            )
-
-                            # Format the result for response
-                            data = []
-                            for group in groups:
-                                row = {}
-
-                                # Format the groupby field which is typically a many2one
-                                groupby_value = group.get(groupby_fields[0])
-                                if isinstance(groupby_value, tuple) and len(groupby_value) >= 2:
-                                    # Many2one fields return (id, name)
-                                    row[groupby_fields[0]] = {
-                                        'id': groupby_value[0],
-                                        'name': groupby_value[1]
-                                    }
-                                else:
-                                    row[groupby_fields[0]] = groupby_value
-
-                                # Add aggregated values
-                                for field in aggregation_fields:
-                                    row[field] = group.get(field)
-
-                                # Ajout du domaine spécifique au groupe
-                                first_groupby_field = groupby_fields[0] if groupby_fields else None
-
-                                # Pour les champs date avec intervalle, extraire le nom de base
-                                if first_groupby_field:
-                                    if ':' in first_groupby_field:
-                                        base_field, interval = first_groupby_field.split(':')
-                                        field_name = base_field
-                                    else:
-                                        field_name = first_groupby_field
-                                else:
-                                    field_name = None
-
-                                # Obtenir la valeur du premier groupby pour ce groupe
-                                group_value = group.get(first_groupby_field)
-                                first_groupby_value = None
-
-                                if isinstance(group_value, tuple) and len(group_value) >= 2:
-                                    # Si c'est un many2one, prendre l'ID
-                                    first_groupby_value = group_value[0]
-                                else:
-                                    first_groupby_value = group_value
-
-                                # Construire un domaine simplifié pour le premier groupby
-                                if first_groupby_value is not None:
-                                    row["odash.domain"] = [[field_name, "=", first_groupby_value]]
-                                else:
-                                    row["odash.domain"] = []
-                                data.append(row)
-                        else:
-                            # No groupby, just do a normal search and read
-                            records = model_obj.search(domain, limit=page_size, order=order)
-
-                            # Read the fields
-                            data = []
-                            if records:
-                                # Read all fields at once for better performance
-                                records_data = records.read(fields_to_read)
-
-                                # Post-process the data
-                                for record in records_data:
-                                    row = {}
-                                    for field_name in fields_to_read:
-                                        field_value = record.get(field_name)
-                                        field_info = model_obj._fields.get(field_name)
-
-                                        # Handle different field types
-                                        if field_info and field_info.type == 'many2one' and isinstance(field_value, (list, tuple)) and len(field_value) >= 2:
-                                            # Many2one fields need to be formatted as {id, name} objects
-                                            row[field_name] = {
-                                                'id': field_value[0],
-                                                'name': field_value[1]
-                                            }
-                                        else:
-                                            # For other fields, use the value directly
-                                            row[field_name] = field_value
-
-                                    # Ajout du domaine spécifique à l'ID du record uniquement
-                                    row["odash.domain"] = [["id", "=", record.get("id")]]
-                                    data.append(row)
-
-                    except Exception as e:
-                        _logger.error("Error generating table data: %s", str(e))
-                        # Retourner un objet d'erreur standardisé au lieu d'une valeur de fallback
-                        return_data = {
-                            'success': False,
-                            'error': str(e)
-                        }
-                        return self._build_response(return_data, status=500)
-
-                    # Prepare response data
-                    visualization_data = {
-                        config_id: {
-                            "data": data,
-                        }
-                    }
-
-                elif visualization_type == 'block':
-                    # Get real data for a block (KPI)
-                    block_options = config.get('block_options', {})
-                    field_name = block_options.get('field', 'id')
-                    aggregation = block_options.get('aggregation', 'count')
-
-                    _logger.info("Generating block data for model: %s, field: %s, aggregation: %s",
-                                model_name, field_name, aggregation)
-
-                    # Get domain from configuration
-                    data_source = config.get('data_source', {})
-                    domain = data_source.get('domain', [])
-
-                    # Convert domain to Odoo format if needed
-                    odoo_domain = domain
-
-                    try:
-                        # Check if model exists
-                        model_obj = request.env[model_name].sudo()
-
-                        # Check if field exists in the model
-                        field_exists = field_name in model_obj._fields
-                        if not field_exists and aggregation != 'count':
-                            _logger.warning("Field %s not found in model %s, falling back to count",
-                                            field_name, model_name)
-                            aggregation = 'count'
-                            field_name = 'id'  # Use id for count
-
-                        # Calculate the aggregation using SQL
-                        table_name = model_obj._table
-
-                        # Build the SQL query based on the aggregation type
-                        if aggregation == 'count':
-                            # Simple count query
-                            query = f"""
-                                SELECT COUNT(*) as value 
-                                FROM "{table_name}"
-                            """
-                            self._apply_sql_where_clause(query, model_name, odoo_domain)
-                            result = request.env.cr.dictfetchone()
-                            value = result.get('value', 0) if result else 0
-                        elif aggregation == 'count_distinct':
-                            # Count distinct values
-                            query = f"""
-                                SELECT COUNT(DISTINCT "{field_name}") as value 
-                                FROM "{table_name}"
-                            """
-                            self._apply_sql_where_clause(query, model_name, odoo_domain)
-                            result = request.env.cr.dictfetchone()
-                            value = result.get('value', 0) if result else 0
-                        elif aggregation in ['sum', 'avg', 'min', 'max']:
-                            # Aggregation query
-                            query = f"""
-                                SELECT {aggregation.upper()}("{field_name}") as value 
-                                FROM "{table_name}"
-                                WHERE "{field_name}" IS NOT NULL
-                            """
-                            self._apply_sql_where_clause(query, model_name, odoo_domain)
-                            result = request.env.cr.dictfetchone()
-                            value = result.get('value', 0) if result else 0
-                        else:
-                            # Unsupported aggregation
-                            _logger.warning("Unsupported aggregation: %s, using count", aggregation)
-                            aggregation = 'count'
-                            query = f"""
-                                SELECT COUNT(*) as value 
-                                FROM "{table_name}"
-                            """
-                            self._apply_sql_where_clause(query, model_name, odoo_domain)
-                            result = request.env.cr.dictfetchone()
-                            value = result.get('value', 0) if result else 0
-
-                    except Exception as e:
-                        _logger.error("Error executing query for block data: %s", str(e))
-                        # Retourner un objet d'erreur standardisé au lieu d'une valeur de fallback
-                        return_data = {
-                            'success': False,
-                            'error': str(e)
-                        }
-                        return self._build_response(return_data, status=500)
-
-                    # Get field label for display
-                    field_label = field_name
-                    if field_exists:
-                        field_info = model_obj._fields[field_name]
-                        field_label = field_info.string or field_name
-
-                    # Prepare response data
-                    visualization_data = {
-                        config_id: {
-                            "data": {
-                                "value": value,
-                                "label": field_label,
-                                "odash.domain": []
-                            },
-                        }
-                    }
-
-                # Prepare response data
-                response_data.append(visualization_data)
-
-            # Check if we have response data
-            if not response_data:
-                return self._build_response({'success': False, 'error': 'No valid configuration data found'}, status=400)
-
-            # Return the final response
-            return self._build_response({'success': True, 'data': response_data})
-
-        except Exception as e:
-            _logger.error("Error in API get_visualization_data: %s", str(e))
-            return self._build_response({'success': False, 'error': str(e)}, status=500)
-
-    @http.route(['/api/get/model_fields/<string:model_name>'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
-    def get_model_fields(self, model_name, **kw):
-        """
-        Retrieve information about the fields of a specific Odoo model.
-        
-        :param model_name: Name of the Odoo model (example: 'sale.order')
-        :return: JSON with information about the model's fields
-        """
-        try:
-            _logger.info("API call: Fetching fields info for model: %s", model_name)
-
-            # Check if the model exists
-            if model_name not in request.env:
-                return self._build_response({'success': False, 'error': f"Model '{model_name}' not found"}, status=404)
-
-            # Get field information
-            model_obj = request.env[model_name].sudo()
-            fields_info = self._get_fields_info(model_obj)
-
-            return self._build_response({'success': True, 'data': fields_info}, 200)
-
-        except Exception as e:
-            _logger.error("Error in API get_model_fields: %s", str(e))
-            return self._build_response({'success': False, 'error': str(e)}, status=500)
-
-    def _get_fields_info(self, model):
-        """
-        Get information about all fields of an Odoo model.
-        
-        :param model: Odoo model object
-        :return: List of field information
-        """
-        fields_info = []
-
-        # Get fields from the model
-        fields_data = model.fields_get()
-
-        # Fields to exclude
-        excluded_field_types = ['binary', 'one2many', 'many2many', 'text']  # Binary fields like images in base64
-        excluded_field_names = [
-            '__last_update',
-            'write_date', 'write_uid', 'create_uid',
-        ]
-
-        # Fields prefixed with these strings will be excluded
-        excluded_prefixes = ['message_', 'activity_', 'has_', 'is_', 'x_studio_']
-
-        for field_name, field_data in fields_data.items():
-            field_type = field_data.get('type', 'unknown')
-
-            # Skip fields that match our exclusion criteria
-            if (field_type in excluded_field_types or
-                field_name in excluded_field_names or
-                any(field_name.startswith(prefix) for prefix in excluded_prefixes)):
-                continue
-
-            # Check if it's a computed field that's not stored
-            field_obj = model._fields.get(field_name)
-            if field_obj and field_obj.compute and not field_obj.store:
-                _logger.debug("Skipping non-stored computed field: %s", field_name)
-                continue
-
-            # Create field info object for response
-            field_info = {
-                'field': field_name,
-                'name': field_data.get('string', field_name),
-                'type': field_type,
-                'label': field_data.get('string', field_name),
-                'value': field_name,
-                'search': f"{field_name} {field_data.get('string', field_name)}"
-            }
-
-            # Add selection options if field is a selection
-            if field_data.get('type') == 'selection' and 'selection' in field_data:
-                field_info['selection'] = [
-                    {'value': value, 'label': label}
-                    for value, label in field_data['selection']
-                ]
-
-            fields_info.append(field_info)
-
-        # Sort fields by name for better readability
-        fields_info.sort(key=lambda x: x['name'])
-
-        return fields_info
-
-    def _extract_post_data(self, request, kw):
-        """
-        Extract and parse data from POST request body.
-        
-        :param request: HTTP request object
-        :param kw: Additional keyword arguments
-        :return: Parsed request parameters
-        """
-        try:
-            # Try to parse JSON data from request body
-            post_data = json.loads(request.httprequest.data.decode('utf-8'))
-            # If we have a params field (standard JSON-RPC envelope), use that
-            if 'params' in post_data:
-                params = post_data.get('params', {})
-            # Otherwise use the whole body
-            else:
-                params = post_data
-        except Exception as e:
-            _logger.warning("Failed to parse POST JSON data: %s", str(e))
-            # If parsing fails, try to get form data
-            params = dict(request.httprequest.form)
-
-            # If still empty, try to use kw
-            if not params:
-                params = kw
-
-        # Normalize to list if it's a single configuration
-        if not isinstance(params, list):
-            params = [params]
-
-        return params
-
-    def _build_response(self, data, status=200, error=None):
-        """
-        Build a standardized API response.
-        
-        :param data: Response data to include
-        :param status: HTTP status code
-        :param error: Optional error message
-        :return: HTTP Response object
-        """
-        if error:
-            response_data = {
-                'success': False,
-                'error': str(error)
-            }
-        else:
-            response_data = data
-
-        return Response(
-            json.dumps(response_data, cls=OdashboardJSONEncoder),
-            content_type='application/json',
-            status=status
-        )
-
-    def _apply_sql_where_clause(self, query, model_name, domain):
-        """
-        Apply SQL WHERE clause based on Odoo domain.
-        
-        :param query: SQL query to modify
-        :param model_name: Model name for domain calculation
-        :param domain: Odoo domain expression
-        :return: Tuple of (modified query, if query was executed)
-        """
+        return []
+    
+    def _build_date_range(self, model, field_name, domain, interval='month'):
+        """Build a range of dates for show_empty functionality."""
+        # First get the min and max dates from the data
         if not domain:
-            request.env.cr.execute(query)
-            return True
-
-        where_clause, where_params = request.env[model_name].sudo()._where_calc(domain).where_clause
-        if where_clause:
-            # Check if the query already has a WHERE clause
-            if ' WHERE ' in query:
-                query += f" AND {where_clause}"
-            else:
-                query += f" WHERE {where_clause}"
-            request.env.cr.execute(query, where_params)
+            where_clause = "TRUE"
+            where_params = []
         else:
-            request.env.cr.execute(query)
-
-        return True
-
-    def _format_field_value(self, field_value, field_info):
-        """
-        Format field value based on field type for API response.
+            query = model._where_calc(domain)
+            where_clause = query.where_clause and query.where_clause[0] or "TRUE"
+            where_params = query.where_clause_params or []
         
-        :param field_value: Raw field value
-        :param field_info: Field information object
-        :return: Formatted field value
+        min_date_query = f"""
+            SELECT MIN({field_name}::date) as min_date FROM {model._table}
+            WHERE {where_clause}
         """
-        # Handle many2one fields which return (id, name) tuples
-        if field_info and field_info.type == 'many2one' and isinstance(field_value, (list, tuple)) and len(field_value) >= 2:
+        request.env.cr.execute(min_date_query, where_params)
+        min_date = request.env.cr.fetchone()[0] or date.today()
+        
+        max_date_query = f"""
+            SELECT MAX({field_name}::date) as max_date FROM {model._table}
+            WHERE {where_clause}
+        """
+        request.env.cr.execute(max_date_query, where_params)
+        max_date = request.env.cr.fetchone()[0] or date.today()
+        
+        # Generate all intermediate dates based on interval
+        date_values = []
+        current_date = min_date
+        
+        if interval == 'day':
+            delta = timedelta(days=1)
+            format_str = '%Y-%m-%d'
+        elif interval == 'week':
+            delta = timedelta(weeks=1)
+            # Use ISO week format
+            format_str = 'W%W %Y'
+        elif interval == 'month':
+            # For months, use a relative delta
+            delta = relativedelta(months=1)
+            format_str = '%Y-%m'
+        elif interval == 'quarter':
+            delta = relativedelta(months=3)
+            # Custom handling for quarters
+            format_str = 'Q%q %Y'
+        elif interval == 'year':
+            delta = relativedelta(years=1)
+            format_str = '%Y'
+        else:
+            # Default to month
+            delta = relativedelta(months=1)
+            format_str = '%Y-%m'
+        
+        while current_date <= max_date:
+            # Format based on interval
+            if interval == 'week':
+                date_values.append(f"W{current_date.isocalendar()[1]} {current_date.year}")
+            elif interval == 'quarter':
+                quarter = (current_date.month - 1) // 3 + 1
+                date_values.append(f"Q{quarter} {current_date.year}")
+            else:
+                date_values.append(current_date.strftime(format_str))
+            
+            # Move to next date
+            current_date += delta
+        
+        return date_values
+    
+    def _generate_empty_combinations(self, model, group_by_list, domain):
+        """Generate all combinations for fields with show_empty=True."""
+        show_empty_fields = []
+        all_values = {}
+        
+        # Identify fields with show_empty and get their values
+        for gb in group_by_list:
+            field = gb.get('field')
+            show_empty = gb.get('show_empty', False)
+            
+            if show_empty and field:
+                interval = gb.get('interval')
+                show_empty_fields.append((field, interval))
+                
+                if model._fields[field].type in ['date', 'datetime']:
+                    # For date fields, generate range
+                    all_values[(field, interval)] = self._build_date_range(
+                        model, field, domain, interval or 'month'
+                    )
+                else:
+                    # For other fields, get all possible values
+                    all_values[(field, interval)] = self._get_field_values(model, field, domain)
+        
+        if not show_empty_fields:
+            return []
+        
+        # Generate all combinations
+        fields_to_combine = [all_values.get((f, i), []) for f, i in show_empty_fields]
+        field_names = [f for f, _ in show_empty_fields]
+        
+        # Use itertools.product to get all combinations
+        combinations = list(itertools.product(*fields_to_combine))
+        return [dict(zip(field_names, combo)) for combo in combinations]
+    
+    def _handle_show_empty(self, results, model, group_by_list, domain, measures=None):
+        """Handle show_empty for groupBy fields by filling in missing combinations."""
+        if not any(gb.get('show_empty', False) for gb in group_by_list):
+            return results  # No show_empty, return original results
+        
+        # Generate all possible combinations for show_empty fields
+        all_combinations = self._generate_empty_combinations(model, group_by_list, domain)
+        if not all_combinations:
+            return results
+        
+        # Create a dictionary for easy lookup of existing results
+        existing_results = {}
+        for result in results:
+            # Create a key based on groupby field values
+            key_parts = []
+            for gb in group_by_list:
+                field = gb.get('field')
+                if field:
+                    key_parts.append(str(result.get(field)))
+            
+            existing_results[tuple(key_parts)] = result
+        
+        # Create combined results with empty values for missing combinations
+        combined_results = []
+        
+        for combo in all_combinations:
+            # Create a key to check if this combination exists in results
+            key_parts = []
+            for gb in group_by_list:
+                field = gb.get('field')
+                if field:
+                    key_parts.append(str(combo.get(field, '')))
+            
+            combo_key = tuple(key_parts)
+            
+            if combo_key in existing_results:
+                # Use existing result
+                combined_results.append(existing_results[combo_key])
+            else:
+                # Create a new result with zero values for measures
+                new_result = combo.copy()
+                
+                # Set all measures to 0
+                if measures:
+                    for measure in measures:
+                        field = measure.get('field')
+                        if field:
+                            new_result[field] = 0
+                
+                # Add the new result
+                combined_results.append(new_result)
+        
+        return combined_results
+    
+    def _build_odash_domain(self, group_by_values):
+        """Build odash.domain for a specific data point based on groupby values.
+        Returns only the specific domain for this data point, not including the base domain.
+        """
+        domain = []
+        
+        for field, value in group_by_values.items():
+            if isinstance(value, str) and re.match(r'W\d{1,2}\s+\d{4}', value):
+                # Handle week format by getting date range
+                start_date, end_date = self._parse_date_from_string(value, return_range=True)
+                domain.append([field, '>=', start_date.isoformat()])
+                domain.append([field, '<=', end_date.isoformat()])
+            elif field.endswith(':month') or field.endswith(':week') or field.endswith(':day') or field.endswith(':year'):
+                # Handle date intervals
+                base_field = field.split(':')[0]
+                interval = field.split(':')[1]
+                
+                if interval == 'month' and re.match(r'\d{4}-\d{2}', str(value)):
+                    year, month = str(value).split('-')
+                    start_date = date(int(year), int(month), 1)
+                    end_date = date(int(year), int(month), calendar.monthrange(int(year), int(month))[1])
+                    domain.append([base_field, '>=', start_date.isoformat()])
+                    domain.append([base_field, '<=', end_date.isoformat()])
+                else:
+                    # Direct comparison for other formats
+                    domain.append([field, '=', value])
+            else:
+                # Regular field
+                domain.append([field, '=', value])
+        
+        # Return empty list if domain is identical to base_domain
+        return domain if domain else []
+    
+    def _process_block(self, model, domain, config):
+        """Process block type visualization."""
+        block_options = config.get('block_options', {})
+        field = block_options.get('field')
+        aggregation = block_options.get('aggregation', 'sum')
+        label = block_options.get('label', field)
+        
+        if not field:
+            return {'error': 'Missing field in block_options'}
+        
+        # Compute the aggregated value
+        if aggregation == 'count':
+            count = model.search_count(domain)
             return {
-                'id': field_value[0],
-                'name': field_value[1]
+                'data': {
+                    'value': count,
+                    'label': label or 'Count',
+                    'odash.domain': []
+                }
             }
-        # Handle other field types
-        return field_value
+        else:
+            # For sum, avg, min, max
+            try:
+                # Use SQL for better performance on large datasets
+                agg_func = aggregation.upper()
+                if not domain:
+                    where_clause = "TRUE"
+                    where_params = []
+                else:
+                    query = model._where_calc(domain)
+                    where_clause = query.where_clause and query.where_clause[0] or "TRUE"
+                    where_params = query.where_clause_params or []
+                    
+                query = f"""
+                    SELECT {agg_func}({field}) as value
+                    FROM {model._table}
+                    WHERE {where_clause}
+                """
+                request.env.cr.execute(query, where_params)
+                value = request.env.cr.fetchone()[0] or 0
+                
+                return {
+                    'data': {
+                        'value': value,
+                        'label': label or f'{aggregation.capitalize()} of {field}',
+                        'odash.domain': []
+                    }
+                }
+            except Exception as e:
+                _logger.error("Error calculating block value: %s", e)
+                return {'error': f'Error calculating {aggregation} for {field}: {str(e)}'}
+    
+    def _process_graph(self, model, domain, group_by_list, order_string, config):
+        """Process graph type visualization."""
+        graph_options = config.get('graph_options', {})
+        measures = graph_options.get('measures', [])
+        
+        if not group_by_list:
+            return {'error': 'Missing groupBy configuration for graph'}
+        
+        if not measures:
+            # Default to count measure if not specified
+            measures = [{'field': 'id', 'aggregation': 'count'}]
+        
+        # Prepare groupby fields for read_group
+        groupby_fields = []
+        for gb in group_by_list:
+            field = gb.get('field')
+            interval = gb.get('interval')
+            if field:
+                groupby_fields.append(f"{field}:{interval}" if interval else field)
+        
+        # Prepare measure fields for read_group
+        measure_fields = []
+        for measure in measures:
+            field = measure.get('field')
+            agg = measure.get('aggregation', 'sum')
+            if field and agg != 'count':
+                measure_fields.append(field)
+        
+        # Execute read_group
+        try:
+            results = model.read_group(
+                domain,
+                fields=measure_fields,
+                groupby=groupby_fields,
+                orderby=order_string,
+                lazy=False
+            )
+            
+            # Handle show_empty if needed
+            has_show_empty = any(gb.get('show_empty', False) for gb in group_by_list)
+            if has_show_empty:
+                results = self._handle_show_empty(results, model, group_by_list, domain, measures)
+            
+            # Transform results into the expected format
+            transformed_data = self._transform_graph_data(results, group_by_list, measures, domain)
+            
+            return {'data': transformed_data}
+            
+        except Exception as e:
+            _logger.exception("Error in _process_graph: %s", e)
+            return {'error': f'Error processing graph data: {str(e)}'}
+    
+    def _transform_graph_data(self, results, group_by_list, measures, base_domain):
+        """Transform read_group results into the expected format for graph visualization."""
+        # Determine the primary grouping field (first in the list)
+        primary_field = group_by_list[0].get('field') if group_by_list else None
+        if not primary_field:
+            return []
+        
+        # Get the interval if any
+        primary_interval = group_by_list[0].get('interval')
+        primary_field_with_interval = f"{primary_field}:{primary_interval}" if primary_interval else primary_field
+        
+        # Process secondary groupings (if any)
+        secondary_fields = []
+        for i, gb in enumerate(group_by_list[1:], 1):
+            field = gb.get('field')
+            interval = gb.get('interval')
+            if field:
+                field_with_interval = f"{field}:{interval}" if interval else field
+                secondary_fields.append((field, field_with_interval))
+        
+        # Initialize output data
+        transformed_data = []
+        
+        # Group by primary field first
+        primary_groups = {}
+        for result in results:
+            # Extract the primary field value
+            primary_value = result.get(primary_field_with_interval)
+            if primary_field_with_interval in result:
+                # Sometimes read_group adds suffixes to the field names
+                primary_value = result[primary_field_with_interval]
+            
+            # Format primary value if it's a many2one field (tuple with id and name)
+            formatted_primary_value = primary_value
+            if isinstance(primary_value, tuple) and len(primary_value) == 2:
+                # For many2one fields, extract just the display name
+                formatted_primary_value = primary_value[1]
+                
+            # Create or get the group for this primary value
+            if primary_value not in primary_groups:
+                primary_groups[primary_value] = {
+                    'key': str(formatted_primary_value),
+                    'odash.domain': self._build_odash_domain({primary_field: primary_value})
+                }
+            
+            # Process secondary fields and measures
+            for sec_field, sec_field_with_interval in secondary_fields:
+                sec_value = result.get(sec_field_with_interval)
+                
+                # Add measure values with secondary field in the key
+                for measure in measures:
+                    field = measure.get('field')
+                    agg = measure.get('aggregation', 'sum')
+                    
+                    # Format the secondary field value correctly
+                    formatted_sec_value = sec_value
+                    if sec_value and isinstance(sec_value, tuple) and len(sec_value) == 2:
+                        # For many2one fields, we get a tuple (id, name)
+                        # Extract just the display name for cleaner output
+                        formatted_sec_value = sec_value[1]
+                    
+                    # Construct the key for this measure and secondary field value
+                    measure_key = f"{field}|{formatted_sec_value}" if sec_field else field
+                    
+                    # Get the measure value from the result
+                    if agg == 'count':
+                        measure_value = result.get('__count', 0)
+                    else:
+                        measure_value = result.get(field, 0)
+                    
+                    # Add to the primary group
+                    primary_groups[primary_value][measure_key] = measure_value
+        
+        # Convert the dictionary to a list
+        transformed_data = list(primary_groups.values())
+        
+        return transformed_data
+    
+    def _process_table(self, model, domain, group_by_list, order_string, config):
+        """Process table type visualization."""
+        table_options = config.get('table_options', {})
+        columns = table_options.get('columns', [])
+        limit = table_options.get('limit', 50)
+        offset = table_options.get('offset', 0)
+        
+        if not columns:
+            return {'error': 'Missing columns configuration for table'}
+        
+        # Extract fields to read
+        fields_to_read = [col.get('field') for col in columns if col.get('field')]
+        
+        # Check if grouping is required
+        if group_by_list:
+            # Table with grouping - use read_group
+            groupby_fields = []
+            has_show_empty = any(gb.get('show_empty', False) for gb in group_by_list)
+            
+            for gb in group_by_list:
+                field = gb.get('field')
+                interval = gb.get('interval')
+                if field:
+                    groupby_fields.append(f"{field}:{interval}" if interval else field)
+                    if field not in fields_to_read:
+                        fields_to_read.append(field)
+            
+            if not groupby_fields:
+                return {'error': "Invalid 'groupBy' configuration for grouped table"}
+            
+            # Add __count field for the counts per group
+            fields_to_read.append('__count')
+            
+            try:
+                # Execute read_group
+                results = model.read_group(
+                    domain,
+                    fields=fields_to_read,
+                    groupby=groupby_fields,
+                    orderby=order_string,
+                    lazy=False
+                )
+                
+                # Handle show_empty if needed
+                if has_show_empty:
+                    results = self._handle_show_empty(results, model, group_by_list, domain)
+                
+                # Format for table display
+                total_count = len(results)
+                results = results[offset:offset+limit] if limit else results
+                
+                # Add domain for each row
+                for result in results:
+                    row_domain = list(domain)  # Start with base domain
+                    
+                    # Add domain elements for each groupby field
+                    for gb_field in groupby_fields:
+                        base_field = gb_field.split(':')[0] if ':' in gb_field else gb_field
+                        value = result.get(gb_field)
+                        
+                        if value is not None:
+                            if gb_field.endswith(':month') or gb_field.endswith(':week') or gb_field.endswith(':day') or gb_field.endswith(':year'):
+                                # Handle date intervals
+                                base_field = gb_field.split(':')[0]
+                                interval = gb_field.split(':')[1]
+                                
+                                # Parse the date and build a range domain
+                                date_start, date_end = self._parse_date_from_string(str(value), return_range=True)
+                                if date_start and date_end:
+                                    row_domain.append([base_field, '>=', date_start.isoformat()])
+                                    row_domain.append([base_field, '<=', date_end.isoformat()])
+                            else:
+                                # Direct comparison for regular fields
+                                row_domain.append([base_field, '=', value])
+                    
+                    result['odash.domain'] = row_domain
+                
+                return {
+                    'data': results,
+                    'metadata': {
+                        'page': offset // limit + 1 if limit else 1,
+                        'limit': limit,
+                        'total_count': total_count
+                    }
+                }
+                
+            except Exception as e:
+                _logger.exception("Error in _process_table with groupBy: %s", e)
+                return {'error': f'Error processing grouped table: {str(e)}'}
+        
+        else:
+            # Simple table - use search_read
+            try:
+                # Count total records for pagination
+                total_count = model.search_count(domain)
+                
+                # Fetch the records
+                records = model.search_read(
+                    domain,
+                    fields=fields_to_read,
+                    limit=limit,
+                    offset=offset,
+                    order=order_string
+                )
+                
+                # Add domain for each record
+                for record in records:
+                    record['odash.domain'] = expression.AND([[('id', '=', record['id'])], domain])
+                
+                return {
+                    'data': records,
+                    'metadata': {
+                        'page': offset // limit + 1 if limit else 1,
+                        'limit': limit,
+                        'total_count': total_count
+                    }
+                }
+                
+            except Exception as e:
+                _logger.exception("Error in _process_table: %s", e)
+                return {'error': f'Error processing table: {str(e)}'}
+    
+    def _process_sql_request(self, sql_request, viz_type, config):
+        """Process a SQL request with security measures."""
+        # SECURITY WARNING: Direct SQL execution from API requests is risky.
+        # This implementation includes safeguards but should be further reviewed.
+        
+        config_id = config.get('id')
+        try:
+            # Check for dangerous keywords (basic sanitization)
+            dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'CREATE', 'ALTER', 'TRUNCATE']
+            has_dangerous_keyword = any(keyword in sql_request.upper() for keyword in dangerous_keywords)
+            
+            if has_dangerous_keyword:
+                _logger.warning("Dangerous SQL detected for config ID %s: %s", config_id, sql_request)
+                return {'error': 'SQL contains prohibited operations'}
+            
+            # Execute the SQL query (with LIMIT safeguard)
+            if 'LIMIT' not in sql_request.upper():
+                sql_request += " LIMIT 1000"  # Default limit for safety
+            
+            try:
+                request.env.cr.execute(sql_request)
+                results = request.env.cr.dictfetchall()
+                
+                # Format data based on visualization type
+                if viz_type == 'graph':
+                    return {'data': results}  # Simple pass-through for now
+                elif viz_type == 'table':
+                    return {'data': results, 'metadata': {'total_count': len(results)}}
+                
+            except Exception as e:
+                _logger.error("SQL execution error: %s", e)
+                return {'error': f'SQL error: {str(e)}'}
+                
+        except Exception as e:
+            _logger.exception("Error in _process_sql_request:")
+            return {'error': str(e)}
+        
+        return {'error': 'Unexpected error in SQL processing'}
+    
+    @http.route('/api/get/dashboard', type='http', auth='none', csrf=False, methods=['POST'], cors='*')
+    def get_dashboard_data(self):
+        """Main endpoint to get dashboard visualization data.
+        Accepts JSON configurations for blocks, graphs, and tables.
+        """
+        results = {}
+        
+        try:
+            # Parse JSON request data
+            try:
+                request_data = json.loads(request.httprequest.data.decode('utf-8'))
+                if not isinstance(request_data, list):
+                    request_data = [request_data]
+            except Exception as e:
+                _logger.error("Error parsing JSON data: %s", e)
+                return self._build_response({'error': 'Invalid JSON format'}, 400)
+                
+            # Process each visualization request
+            for config in request_data:
+                config_id = config.get('id')
+                if not config_id:
+                    continue
+                    
+                try:
+                    # Extract configuration parameters
+                    viz_type = config.get('type')
+                    model_name = config.get('model')
+                    data_source = config.get('data_source', {})
+                    
+                    # Validate essential parameters
+                    if not all([viz_type, model_name]):
+                        results[config_id] = {'error': 'Missing required parameters: type, model'}
+                        continue
+                        
+                    # Check if model exists
+                    try:
+                        model = request.env[model_name].sudo()
+                    except KeyError:
+                        results[config_id] = {'error': f'Model not found: {model_name}'}
+                        continue
+                    
+                    # Extract common parameters
+                    domain = data_source.get('domain', [])
+                    group_by = data_source.get('groupBy', [])
+                    order_by = data_source.get('orderBy', {})
+                    order_string = None
+                    if order_by:
+                        field = order_by.get('field')
+                        direction = order_by.get('direction', 'asc')
+                        if field:
+                            order_string = f"{field} {direction}"
+                    
+                    # Check if SQL request is provided
+                    sql_request = data_source.get('sqlRequest')
+                    
+                    # Process based on visualization type
+                    if sql_request and viz_type in ['graph', 'table']:
+                        # Handle SQL request (with security measures)
+                        results[config_id] = self._process_sql_request(sql_request, viz_type, config)
+                    elif viz_type == 'block':
+                        results[config_id] = self._process_block(model, domain, config)
+                    elif viz_type == 'graph':
+                        results[config_id] = self._process_graph(model, domain, group_by, order_string, config)
+                    elif viz_type == 'table':
+                        results[config_id] = self._process_table(model, domain, group_by, order_string, config)
+                    else:
+                        results[config_id] = {'error': f'Unsupported visualization type: {viz_type}'}
+                        
+                except Exception as e:
+                    _logger.exception("Error processing visualization %s:", config_id)
+                    results[config_id] = {'error': str(e)}
+            
+            return self._build_response(results)
+            
+        except Exception as e:
+            _logger.exception("Unhandled error in get_dashboard_data:")
+            return self._build_response({'error': str(e)}, 500)
