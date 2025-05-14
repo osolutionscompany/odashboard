@@ -89,11 +89,10 @@ class OdashAPI(http.Controller):
         return None
     
     def _get_field_values(self, model, field_name, domain=None):
-        """Get all possible values for a field, used for show_empty functionality."""
-        if not domain:
-            domain = []
-        
+        """Get all possible values for a field in the model."""
+        domain = domain or []
         field_info = model._fields.get(field_name)
+        
         if not field_info:
             return []
         
@@ -108,35 +107,61 @@ class OdashAPI(http.Controller):
             return [{'id': r['id'], 'display_name': r['display_name']} for r in rel_values]
         
         elif field_info.type in ['date', 'datetime']:
-            # This will be handled separately based on the data range and interval
+            # Cette partie est gérée séparément avec _build_date_range
+            # basé sur l'intervalle et le domaine
             return []
         
-        return []
+        else:
+            # Pour les autres types de champs, récupérer toutes les valeurs existantes
+            records = model.search(domain)
+            # Filtrer les valeurs None pour éviter les problèmes
+            values = [v for v in list(set(records.mapped(field_name))) if v is not None]
+            return values
     
     def _build_date_range(self, model, field_name, domain, interval='month'):
         """Build a range of dates for show_empty functionality."""
-        # First get the min and max dates from the data
-        if not domain:
-            where_clause = "TRUE"
-            where_params = []
-        else:
-            query = model._where_calc(domain)
-            where_clause = query.where_clause and query.where_clause[0] or "TRUE"
-            where_params = query.where_clause_params or []
-        
-        min_date_query = f"""
-            SELECT MIN({field_name}::date) as min_date FROM {model._table}
-            WHERE {where_clause}
-        """
-        request.env.cr.execute(min_date_query, where_params)
-        min_date = request.env.cr.fetchone()[0] or date.today()
-        
-        max_date_query = f"""
-            SELECT MAX({field_name}::date) as max_date FROM {model._table}
-            WHERE {where_clause}
-        """
-        request.env.cr.execute(max_date_query, where_params)
-        max_date = request.env.cr.fetchone()[0] or date.today()
+        # Approche plus simple et robuste - ignorer les requêtes SQL complexes
+        # et travailler directement avec les données du modèle
+        try:
+            # Définir une plage par défaut (derniers 3 mois)
+            today = date.today()
+            default_min_date = today - relativedelta(months=3)
+            default_max_date = today
+            
+            # Récupérer tous les enregistrements correspondant au domaine
+            # et extraire les min/max dates directement des données Python
+            records = model.search(domain or [])
+            if records:
+                date_values = []
+                # Extraire les valeurs de date de tous les enregistrements
+                for record in records:
+                    field_value = record[field_name]
+                    if field_value:
+                        # Convertir en date si c'est un datetime
+                        if isinstance(field_value, datetime):
+                            field_value = field_value.date()
+                        date_values.append(field_value)
+                
+                if date_values:
+                    min_date = min(date_values)
+                    max_date = max(date_values)
+                else:
+                    min_date = default_min_date
+                    max_date = default_max_date
+            else:
+                # Pas de données - utiliser les dates par défaut
+                min_date = default_min_date
+                max_date = default_max_date
+            
+            # Limiter à 1 an maximum pour éviter les plages trop grandes
+            if (max_date - min_date).days > 365:
+                max_date = min_date + timedelta(days=365)
+                _logger.warning("Date range for %s limited to 1 year", field_name)
+        except Exception as e:
+            _logger.error("Error in _build_date_range for field %s: %s", field_name, e)
+            # En cas d'erreur, générer une plage par défaut (3 derniers mois)
+            min_date = date.today() - relativedelta(months=3)
+            max_date = date.today()
         
         # Generate all intermediate dates based on interval
         date_values = []
@@ -189,6 +214,10 @@ class OdashAPI(http.Controller):
         non_show_empty_fields = []
         all_values = {}
         
+        # Identifier les champs qui ont des valeurs NULL/None dans les résultats existants
+        # pour assurer la cohérence dans le traitement des valeurs NULL
+        fields_with_nulls = set()
+        
         for gb in group_by_list:
             field = gb.get('field')
             if not field:
@@ -197,16 +226,66 @@ class OdashAPI(http.Controller):
             show_empty = gb.get('show_empty', False)
             interval = gb.get('interval')
             
-            if show_empty:
+            if show_empty and model._fields[field].type not in ['binary']:
                 show_empty_fields.append((field, interval))
                 
                 if model._fields[field].type in ['date', 'datetime']:
-                    # For date fields, generate range
-                    all_values[(field, interval)] = self._build_date_range(
-                        model, field, domain, interval or 'month'
-                    )
+                    # Approche plus robuste : utiliser les dates réelles des données existantes
+                    # et y ajouter les dates récentes pour compléter
+                    date_values = []
+                    
+                    # 1. Récupérer d'abord les dates existantes dans les données
+                    existing_dates = set()
+                    for r in results:
+                        if field in r and r[field]:
+                            existing_dates.add(r[field])
+                    
+                    # 2. Convertir les dates existantes au format d'affichage standard d'Odoo
+                    for date_val in existing_dates:
+                        if date_val:
+                            # Ajouter au format exact d'Odoo pour assurer la compatibilité
+                            date_values.append(date_val)
+                    
+                    # 3. Si on n'a pas assez de dates, ajouter des dates récentes
+                    if len(date_values) < 3:
+                        today = date.today()
+                        
+                        if interval == 'day':
+                            # Formatter les dates exactement comme Odoo
+                            for i in range(7):
+                                dt = today - timedelta(days=i)
+                                formatted = dt.strftime('%d %b %Y')  # Format: '11 Apr 2025'
+                                if formatted not in date_values:
+                                    date_values.append(formatted)
+                        elif interval == 'week':
+                            for i in range(4):
+                                week_date = today - timedelta(weeks=i)
+                                formatted = f"W{week_date.isocalendar()[1]} {week_date.year}"
+                                if formatted not in date_values:
+                                    date_values.append(formatted)
+                        elif interval == 'month':
+                            for i in range(6):
+                                month_date = today - relativedelta(months=i)
+                                formatted = month_date.strftime('%b %Y')  # Format: 'Apr 2025'
+                                if formatted not in date_values:
+                                    date_values.append(formatted)
+                        elif interval == 'quarter':
+                            for i in range(4):
+                                quarter_date = today - relativedelta(months=i*3)
+                                quarter = (quarter_date.month - 1) // 3 + 1
+                                formatted = f"Q{quarter} {quarter_date.year}"
+                                if formatted not in date_values:
+                                    date_values.append(formatted)
+                        elif interval == 'year':
+                            for i in range(3):
+                                formatted = str(today.year - i)
+                                if formatted not in date_values:
+                                    date_values.append(formatted)
+                    
+                    # Utiliser cette plage fixe
+                    all_values[(field, interval)] = date_values
                 else:
-                    # For other fields, get all possible values
+                    # Pour tous les autres types de champs
                     all_values[(field, interval)] = self._get_field_values(model, field, domain)
             else:
                 non_show_empty_fields.append((field, interval))
@@ -291,10 +370,17 @@ class OdashAPI(http.Controller):
         for combo in all_combinations:
             # Create a key to check if this combination exists in results
             key_parts = []
+            skip_combo = False
+            
             for gb in group_by_list:
                 field = gb.get('field')
                 if field:
                     value = combo.get(field, '')
+                    
+                    # Skip combinations with None values for date fields that don't have show_empty
+                    if value is None and not gb.get('show_empty', False):
+                        skip_combo = True
+                        break
                     
                     # Format the value in a consistent way
                     if isinstance(value, tuple) and len(value) == 2:
@@ -308,23 +394,46 @@ class OdashAPI(http.Controller):
                         
                     key_parts.append(str(formatted_value))
             
+            # Skip this combination if it has None values for non-show_empty fields
+            if skip_combo:
+                continue
+            
+            # S'assurer que la clé ne contient pas "None" comme valeur textuelle
+            # car ça crée des entrées indésirables
+            if "None" in key_parts:
+                continue
+                
             combo_key = tuple(key_parts)
             
             if combo_key in existing_results:
                 # Use existing result
                 combined_results.append(existing_results[combo_key])
             else:
-                # Create a new result with zero values for measures
-                new_result = combo.copy()
+                # Create new empty result with correct structure
+                new_result = {}
                 
-                # Set all measures to 0
-                if measures:
-                    for measure in measures:
-                        field = measure.get('field')
-                        if field:
-                            new_result[field] = 0
+                # Add all accumulated measures with default values
+                for measure in measures or []:
+                    field = measure.get('field')
+                    agg = measure.get('aggregation')
+                    # Set default value (0 for numeric fields, False for others)
+                    new_result[field] = 0 if model._fields[field].type in ['float', 'monetary', 'integer'] else False
                 
-                # Add the new result
+                # Add combination values to result, avec les formats compatibles read_group
+                for gb in group_by_list:
+                    field = gb.get('field')
+                    interval = gb.get('interval')
+                    
+                    if field in combo:
+                        # Ajouter à la fois le champ original et le champ avec intervalle
+                        # pour assurer la compatibilité avec _transform_graph_data
+                        new_result[field] = combo[field]
+                        
+                        # Ajouter également avec le format field:interval pour assurer la compatibilité
+                        if interval:
+                            field_with_interval = f"{field}:{interval}"
+                            new_result[field_with_interval] = combo[field]
+                    
                 combined_results.append(new_result)
         
         return combined_results
@@ -492,11 +601,24 @@ class OdashAPI(http.Controller):
         # Group by primary field first
         primary_groups = {}
         for result in results:
-            # Extract the primary field value
-            primary_value = result.get(primary_field_with_interval)
+            # Extract the primary field value - ATTENTION aux différents formats de clés
+            primary_value = None
+            
+            # Essayer d'abord avec le format field:interval (standard de read_group)
             if primary_field_with_interval in result:
-                # Sometimes read_group adds suffixes to the field names
                 primary_value = result[primary_field_with_interval]
+            # Puis essayer avec le format field sans interval (utilisé par _handle_show_empty)
+            elif primary_field in result:
+                primary_value = result[primary_field]
+                
+            # Si on n'a toujours pas de valeur, essayer avec .get pour les valeurs par défaut
+            if primary_value is None:
+                primary_value = result.get(primary_field_with_interval, result.get(primary_field))
+            
+            # Filtrer uniquement les valeurs None littérales qui créent la clé "None"
+            # mais pas les dates générées par _handle_show_empty
+            if primary_value is None and not isinstance(primary_value, str):
+                continue
             
             # Format primary value for cleaner display
             formatted_primary_value = primary_value
@@ -508,18 +630,40 @@ class OdashAPI(http.Controller):
             if isinstance(primary_value, tuple) and len(primary_value) == 2:
                 formatted_primary_value = primary_value[1]
                 dict_key = primary_value  # tuples are already hashable
-            
+        
             # For many2one fields from _get_field_values as dict {'id': id, 'display_name': name}
             elif isinstance(primary_value, dict) and 'display_name' in primary_value:
                 formatted_primary_value = primary_value['display_name']
                 # Convert dict to a hashable tuple (id, name) for use as a key
                 dict_key = (primary_value.get('id'), primary_value.get('display_name'))
+            
+            # Handle date fields (crucial for show_empty)
+            elif isinstance(primary_value, str):
+                # Check if it's a date string format
+                if primary_field_with_interval.endswith(':day') or \
+                   primary_field_with_interval.endswith(':week') or \
+                   primary_field_with_interval.endswith(':month') or \
+                   primary_field_with_interval.endswith(':quarter') or \
+                   primary_field_with_interval.endswith(':year'):
+                    formatted_primary_value = primary_value
+                    dict_key = primary_value
                 
             # Create or get the group for this primary value
             if dict_key not in primary_groups:
+                # Construire le domaine en fonction du type de donnée
+                if primary_field_with_interval.endswith(':day') or \
+                   primary_field_with_interval.endswith(':week') or \
+                   primary_field_with_interval.endswith(':month') or \
+                   primary_field_with_interval.endswith(':quarter') or \
+                   primary_field_with_interval.endswith(':year'):
+                    base_field = primary_field_with_interval.split(':')[0]
+                    domain_field = base_field
+                else:
+                    domain_field = primary_field
+                
                 primary_groups[dict_key] = {
                     'key': str(formatted_primary_value),
-                    'odash.domain': self._build_odash_domain({primary_field: primary_value})
+                    'odash.domain': self._build_odash_domain({domain_field: primary_value})
                 }
             
             # Process secondary fields and measures
@@ -557,6 +701,39 @@ class OdashAPI(http.Controller):
         # Convert the dictionary to a list
         transformed_data = list(primary_groups.values())
         
+        # Trier les données selon le champ de tri spécifié
+        # Le premier groupby est souvent celui qu'on veut trier
+        primary_gb = group_by_list[0] if group_by_list else None
+        if primary_gb:
+            field = primary_gb.get('field')
+            if field:
+                try:
+                    # Pour les dates avec formatage "DD MMM YYYY", convertir en dates pour tri correct
+                    if field in ['date', 'create_date', 'write_date'] or field.endswith('_date'):
+                        # Fonction pour extraire la date d'une clé au format texte
+                        def extract_date(item):
+                            key = item.get('key', '')
+                            try:
+                                # Essayer divers formats de date
+                                formats = ['%d %b %Y', '%Y-%m-%d', '%Y-%m', 'W%W %Y', 'Q%m %Y']
+                                for fmt in formats:
+                                    try:
+                                        return datetime.strptime(key, fmt)
+                                    except ValueError:
+                                        continue
+                                # Si aucun format ne correspond, utiliser la clé telle quelle
+                                return key
+                            except Exception:
+                                return key
+                        
+                        # Trier par date
+                        transformed_data.sort(key=extract_date)
+                    else:
+                        # Tri normal par clé
+                        transformed_data.sort(key=lambda x: x.get('key', ''))
+                except Exception as e:
+                    _logger.warning("Error sorting graph data: %s", e)
+    
         return transformed_data
     
     def _process_table(self, model, domain, group_by_list, order_string, config):
