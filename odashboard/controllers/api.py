@@ -266,8 +266,22 @@ class OdashAPI(http.Controller):
             key_parts = []
             for gb in group_by_list:
                 field = gb.get('field')
+                interval = gb.get('interval')
                 if field:
-                    key_parts.append(str(result.get(field)))
+                    field_with_interval = f"{field}:{interval}" if interval else field
+                    value = result.get(field_with_interval)
+                    
+                    # Format the value in a consistent way
+                    if isinstance(value, tuple) and len(value) == 2:
+                        # Extract the ID for consistent lookup
+                        formatted_value = value[0]
+                    elif isinstance(value, dict) and 'id' in value:
+                        # Extract the ID for consistent lookup
+                        formatted_value = value['id']
+                    else:
+                        formatted_value = value
+                        
+                    key_parts.append(str(formatted_value))
             
             existing_results[tuple(key_parts)] = result
         
@@ -280,7 +294,19 @@ class OdashAPI(http.Controller):
             for gb in group_by_list:
                 field = gb.get('field')
                 if field:
-                    key_parts.append(str(combo.get(field, '')))
+                    value = combo.get(field, '')
+                    
+                    # Format the value in a consistent way
+                    if isinstance(value, tuple) and len(value) == 2:
+                        # Extract the ID for consistent lookup
+                        formatted_value = value[0]
+                    elif isinstance(value, dict) and 'id' in value:
+                        # Extract the ID for consistent lookup
+                        formatted_value = value['id']
+                    else:
+                        formatted_value = value
+                        
+                    key_parts.append(str(formatted_value))
             
             combo_key = tuple(key_parts)
             
@@ -475,17 +501,23 @@ class OdashAPI(http.Controller):
             # Format primary value for cleaner display
             formatted_primary_value = primary_value
             
+            # Create a hashable key for dictionary lookups
+            dict_key = primary_value
+            
             # For many2one fields as tuples (id, name)
             if isinstance(primary_value, tuple) and len(primary_value) == 2:
                 formatted_primary_value = primary_value[1]
+                dict_key = primary_value  # tuples are already hashable
             
             # For many2one fields from _get_field_values as dict {'id': id, 'display_name': name}
             elif isinstance(primary_value, dict) and 'display_name' in primary_value:
                 formatted_primary_value = primary_value['display_name']
+                # Convert dict to a hashable tuple (id, name) for use as a key
+                dict_key = (primary_value.get('id'), primary_value.get('display_name'))
                 
             # Create or get the group for this primary value
-            if primary_value not in primary_groups:
-                primary_groups[primary_value] = {
+            if dict_key not in primary_groups:
+                primary_groups[dict_key] = {
                     'key': str(formatted_primary_value),
                     'odash.domain': self._build_odash_domain({primary_field: primary_value})
                 }
@@ -520,7 +552,7 @@ class OdashAPI(http.Controller):
                         measure_value = result.get(field, 0)
                     
                     # Add to the primary group
-                    primary_groups[primary_value][measure_key] = measure_value
+                    primary_groups[dict_key][measure_key] = measure_value
         
         # Convert the dictionary to a list
         transformed_data = list(primary_groups.values())
