@@ -234,19 +234,113 @@ class OdashAPI(http.Controller):
                     # et y ajouter les dates récentes pour compléter
                     date_values = []
                     
-                    # 1. Récupérer d'abord les dates existantes dans les données
-                    existing_dates = set()
-                    for r in results:
-                        if field in r and r[field]:
-                            existing_dates.add(r[field])
+                    # 1. Utiliser notre propre requête SQL pour obtenir les dates min/max directement
+                    # à partir de la base de données, indépendamment des résultats intermédiaires
+                    try:
+                        # Trouver les dates min et max réelles dans la base de données
+                        min_max_query = f"""
+                            SELECT 
+                                MIN({field}::date) as min_date,
+                                MAX({field}::date) as max_date
+                            FROM {model._table}
+                            WHERE {field} IS NOT NULL
+                        """
+                        request.env.cr.execute(min_max_query)
+                        date_range = request.env.cr.fetchone()
+                        
+                        if date_range and date_range[0] and date_range[1]:
+                            db_min_date = date_range[0]  # Date minimum de la base
+                            db_max_date = date_range[1]  # Date maximum de la base
+                            
+                            # Assurer que nous avons aussi quelques semaines récentes
+                            today = date.today()
+                            actual_max_date = max(db_max_date, today)
+                            
+                            # 2. Générer toutes les valeurs selon l'intervalle
+                            if interval == 'week':
+                                # Convertir en début de semaine
+                                week_min = db_min_date - timedelta(days=db_min_date.weekday())
+                                week_max = actual_max_date + timedelta(days=(6 - actual_max_date.weekday()))
+                                
+                                # Limiter à une année pour éviter les plages trop longues
+                                if (week_max - week_min).days > 365:
+                                    week_min = week_max - timedelta(days=365)
+                                
+                                # Générer toutes les semaines complètes
+                                current = week_min
+                                while current <= week_max:
+                                    week_str = f"W{current.isocalendar()[1]} {current.year}"
+                                    date_values.append(week_str)
+                                    current += timedelta(days=7)
+                            
+                            elif interval == 'month':
+                                # Convertir en début de mois
+                                month_min = date(db_min_date.year, db_min_date.month, 1)
+                                month_max = date(actual_max_date.year, actual_max_date.month, 1)
+                                
+                                # Limiter à deux ans pour éviter les plages trop longues
+                                if (month_max.year - month_min.year) * 12 + (month_max.month - month_min.month) > 24:
+                                    month_min = date(month_max.year - 2, month_max.month, 1)
+                                
+                                # Générer tous les mois
+                                current = month_min
+                                while current <= month_max:
+                                    date_values.append(current.strftime('%b %Y'))
+                                    current = (current.replace(day=28) + timedelta(days=4)).replace(day=1)  # Prochain mois
+                            
+                            elif interval == 'quarter':
+                                # Convertir en début de trimestre
+                                q_min = db_min_date.month - 1
+                                q_min = q_min - (q_min % 3)
+                                quarter_min = date(db_min_date.year, q_min + 1 if q_min > 0 else 1, 1)
+                                
+                                q_max = actual_max_date.month - 1
+                                q_max = q_max - (q_max % 3)
+                                quarter_max = date(actual_max_date.year, q_max + 1 if q_max > 0 else 1, 1)
+                                
+                                # Générer tous les trimestres
+                                current = quarter_min
+                                while current <= quarter_max:
+                                    quarter = ((current.month - 1) // 3) + 1
+                                    date_values.append(f"Q{quarter} {current.year}")
+                                    current = date(current.year + (1 if current.month > 9 else 0), 
+                                                   ((current.month - 1 + 3) % 12) + 1, 1)
+                            
+                            elif interval == 'year':
+                                for year in range(db_min_date.year, actual_max_date.year + 1):
+                                    date_values.append(str(year))
+                            
+                            else:  # day
+                                # Pour les jours, limiter à 60 jours maximum
+                                day_max = min(db_max_date, db_min_date + timedelta(days=60))
+                                current = db_min_date
+                                while current <= day_max:
+                                    date_values.append(current.strftime('%d %b %Y'))
+                                    current += timedelta(days=1)
+                                    
+                        else:
+                            # Si pas de dates dans la BD, utiliser des dates récentes
+                            existing_dates = set()
+                            for r in results:
+                                if field in r and r[field]:
+                                    existing_dates.add(r[field])
+                            
+                            for date_val in existing_dates:
+                                if date_val:
+                                    date_values.append(date_val)
+                    except Exception as e:
+                        _logger.error("Error generating date values: %s", e)
+                        # En cas d'erreur, utiliser les dates des résultats
+                        existing_dates = set()
+                        for r in results:
+                            if field in r and r[field]:
+                                existing_dates.add(r[field])
+                        
+                        for date_val in existing_dates:
+                            if date_val:
+                                date_values.append(date_val)
                     
-                    # 2. Convertir les dates existantes au format d'affichage standard d'Odoo
-                    for date_val in existing_dates:
-                        if date_val:
-                            # Ajouter au format exact d'Odoo pour assurer la compatibilité
-                            date_values.append(date_val)
-                    
-                    # 3. Si on n'a pas assez de dates, ajouter des dates récentes
+                    # 3. Si on n'a toujours pas assez de dates, ajouter des dates récentes
                     if len(date_values) < 3:
                         today = date.today()
                         
