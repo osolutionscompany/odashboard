@@ -252,6 +252,23 @@ class OdashAPI(http.Controller):
                             db_min_date = date_range[0]  # Date minimum de la base
                             db_max_date = date_range[1]  # Date maximum de la base
                             
+                            # Filtrer les dates pour n'utiliser que celles qui ont réellement des données
+                            # Cela corrige le problème où show_empty génère trop de dates intermédiaires
+                            dates_with_data_query = f"""
+                                SELECT DISTINCT
+                                    EXTRACT(YEAR FROM {field}::date) as year,
+                                    EXTRACT(MONTH FROM {field}::date) as month
+                                FROM {model._table}
+                                WHERE {field} IS NOT NULL
+                                ORDER BY year, month
+                            """
+                            request.env.cr.execute(dates_with_data_query)
+                            dates_with_data = request.env.cr.fetchall()
+                            _logger.info("Found %s dates with data for field %s", len(dates_with_data), field)
+                            
+                            # Utiliser les dates min/max de la base de données pour générer une plage complète
+                            # C'est le comportement que l'utilisateur préfère
+                            
                             # Assurer que nous avons aussi quelques semaines récentes
                             today = date.today()
                             actual_max_date = max(db_max_date, today)
@@ -285,7 +302,8 @@ class OdashAPI(http.Controller):
                                 # Générer tous les mois
                                 current = month_min
                                 while current <= month_max:
-                                    date_values.append(current.strftime('%b %Y'))
+                                    # Utiliser le format complet pour correspondre à ce que Odoo renvoie
+                                    date_values.append(current.strftime('%B %Y'))
                                     current = (current.replace(day=28) + timedelta(days=4)).replace(day=1)  # Prochain mois
                             
                             elif interval == 'quarter':
@@ -360,7 +378,7 @@ class OdashAPI(http.Controller):
                         elif interval == 'month':
                             for i in range(6):
                                 month_date = today - relativedelta(months=i)
-                                formatted = month_date.strftime('%b %Y')  # Format: 'Apr 2025'
+                                formatted = month_date.strftime('%B %Y')  # Format: 'April 2025'
                                 if formatted not in date_values:
                                     date_values.append(formatted)
                         elif interval == 'quarter':
@@ -417,10 +435,20 @@ class OdashAPI(http.Controller):
         
         if not all_fields_values:
             return []
-            
-        # Generate all valid combinations
-        combinations = list(itertools.product(*all_fields_values))
-        return [dict(zip(all_field_names, combo)) for combo in combinations]
+        
+        # Générer toutes les combinaisons valides
+        # TOUJOURS utiliser des dictionnaires pour la cohérence des retours
+        if len(all_fields_values) == 1 and len(all_field_names) == 1:
+            # Cas spécial : un seul champ
+            field_name = all_field_names[0]
+            return [{field_name: value} for value in all_fields_values[0]]
+        elif len(all_fields_values) >= 1:
+            # Cas normal : plusieurs champs ou combinaisons
+            combinations = list(itertools.product(*all_fields_values))
+            return [dict(zip(all_field_names, combo)) for combo in combinations]
+        else:
+            # Cas où aucune valeur n'est trouvée
+            return []
     
     def _handle_show_empty(self, results, model, group_by_list, domain, measures=None):
         """Handle show_empty for groupBy fields by filling in missing combinations."""
@@ -466,6 +494,11 @@ class OdashAPI(http.Controller):
             key_parts = []
             skip_combo = False
             
+            # S'assurer que combo est toujours un dictionnaire à ce stade
+            if not isinstance(combo, dict):
+                _logger.error("Unexpected non-dict combo in _handle_show_empty: %s", combo)
+                continue
+                
             for gb in group_by_list:
                 field = gb.get('field')
                 if field:
@@ -661,7 +694,7 @@ class OdashAPI(http.Controller):
                 results = self._handle_show_empty(results, model, group_by_list, domain, measures)
             
             # Transform results into the expected format
-            transformed_data = self._transform_graph_data(results, group_by_list, measures, domain)
+            transformed_data = self._transform_graph_data(results, group_by_list, measures, domain, order_string)
             
             return {'data': transformed_data}
             
@@ -669,8 +702,10 @@ class OdashAPI(http.Controller):
             _logger.exception("Error in _process_graph: %s", e)
             return {'error': f'Error processing graph data: {str(e)}'}
     
-    def _transform_graph_data(self, results, group_by_list, measures, base_domain):
-        """Transform read_group results into the expected format for graph visualization."""
+    def _transform_graph_data(self, results, group_by_list, measures, base_domain, order_string=None):
+        """Transform read_group results into the expected format for graph visualization.
+        order_string: Optional order string (e.g. 'create_date asc' or 'amount_total desc')
+        """
         # Determine the primary grouping field (first in the list)
         primary_field = group_by_list[0].get('field') if group_by_list else None
         if not primary_field:
@@ -796,37 +831,124 @@ class OdashAPI(http.Controller):
         transformed_data = list(primary_groups.values())
         
         # Trier les données selon le champ de tri spécifié
-        # Le premier groupby est souvent celui qu'on veut trier
-        primary_gb = group_by_list[0] if group_by_list else None
-        if primary_gb:
-            field = primary_gb.get('field')
-            if field:
-                try:
-                    # Pour les dates avec formatage "DD MMM YYYY", convertir en dates pour tri correct
-                    if field in ['date', 'create_date', 'write_date'] or field.endswith('_date'):
-                        # Fonction pour extraire la date d'une clé au format texte
-                        def extract_date(item):
+        # Analyser order_string pour détecter la direction de tri
+        sort_direction = 'asc'  # Par défaut
+        sort_field = None
+        
+        if order_string:
+            # Extraire le champ et la direction du order_string
+            parts = order_string.strip().split()
+            if len(parts) >= 1:
+                sort_field = parts[0].strip()
+            if len(parts) >= 2 and parts[1].lower() in ['asc', 'desc']:
+                sort_direction = parts[1].lower()
+        
+        # Si pas de champ de tri spécifié, utiliser le premier groupby
+        if not sort_field and group_by_list:
+            primary_gb = group_by_list[0]
+            sort_field = primary_gb.get('field')
+        
+        if sort_field:
+            try:
+                # Log pour débogage
+                _logger.info("Sorting by field %s with direction %s", sort_field, sort_direction)
+                
+                # Pour les dates avec formatage "DD MMM YYYY", convertir en dates pour tri correct
+                if sort_field in ['date', 'create_date', 'write_date'] or sort_field.endswith('_date'):
+                    # Fonction pour extraire la date d'une clé au format texte
+                    def extract_date(item):
+                        # Gérer le cas où item est une chaîne directement
+                        if isinstance(item, str):
+                            key = item
+                        else:
+                            # Sinon c'est un dictionnaire avec une clé 'key'
                             key = item.get('key', '')
-                            try:
-                                # Essayer divers formats de date
-                                formats = ['%d %b %Y', '%Y-%m-%d', '%Y-%m', 'W%W %Y', 'Q%m %Y']
-                                for fmt in formats:
-                                    try:
-                                        return datetime.strptime(key, fmt)
-                                    except ValueError:
-                                        continue
-                                # Si aucun format ne correspond, utiliser la clé telle quelle
-                                return key
-                            except Exception:
-                                return key
-                        
-                        # Trier par date
-                        transformed_data.sort(key=extract_date)
-                    else:
-                        # Tri normal par clé
-                        transformed_data.sort(key=lambda x: x.get('key', ''))
-                except Exception as e:
-                    _logger.warning("Error sorting graph data: %s", e)
+                            
+                        try:
+                            # Traitement spécial pour les mois au format "Apr 2025" ou "April 2025"
+                            if ' ' in key and not key.startswith('W') and not key.startswith('Q'):
+                                try:
+                                    month_part, year_part = key.split(' ')
+                                    # Table de correspondance pour les noms de mois complets et abréviations
+                                    month_map = {
+                                        'Jan': 1, 'January': 1,
+                                        'Feb': 2, 'February': 2,
+                                        'Mar': 3, 'March': 3,
+                                        'Apr': 4, 'April': 4,
+                                        'May': 5, 'May': 5,
+                                        'Jun': 6, 'June': 6,
+                                        'Jul': 7, 'July': 7,
+                                        'Aug': 8, 'August': 8,
+                                        'Sep': 9, 'Sept': 9, 'September': 9,
+                                        'Oct': 10, 'October': 10,
+                                        'Nov': 11, 'November': 11,
+                                        'Dec': 12, 'December': 12
+                                    }
+                                    
+                                    if month_part in month_map:
+                                        month_num = month_map[month_part]
+                                        year_num = int(year_part)
+                                        # Créer la date du premier jour du mois
+                                        date_obj = datetime(year_num, month_num, 1)
+                                        _logger.info("Converted month %s to date %s", key, date_obj)
+                                        return date_obj
+                                except Exception as e:
+                                    _logger.error("Failed to parse month format %s: %s", key, e)
+                            
+                            # Traitement spécial pour les semaines au format "W15 2025"
+                            if key.startswith('W') and ' ' in key:
+                                try:
+                                    week_part, year_part = key.split(' ')
+                                    week_num = int(week_part[1:])  # Enlever le 'W' et convertir en nombre
+                                    year_num = int(year_part)
+                                    
+                                    # Créer une date pour le premier jour de l'année
+                                    first_day = datetime(year_num, 1, 1)
+                                    
+                                    # Ajouter le nombre de semaines (chaque semaine = 7 jours)
+                                    # On soustrait 1 car W1 correspond à la première semaine
+                                    date_obj = first_day + timedelta(days=(week_num-1)*7)
+                                    return date_obj
+                                except Exception as e:
+                                    _logger.error("Failed to parse week format %s: %s", key, e)
+                                    
+                            # Essayer divers formats de date standards
+                            formats = ['%d %b %Y', '%Y-%m-%d', '%Y-%m', '%m %Y']
+                            for fmt in formats:
+                                try:
+                                    date_obj = datetime.strptime(key, fmt)
+                                    return date_obj
+                                except ValueError:
+                                    continue
+                            # Si aucun format ne correspond, utiliser la clé telle quelle
+                            return key
+                        except Exception as e:
+                            _logger.error("Error parsing date %s: %s", key, e)
+                            return key
+                    
+                    # Trier par date, en respectant la direction
+                    reverse = (sort_direction == 'desc')
+                    # Log avant tri
+                    _logger.info("Before sorting: %s", [item.get('key') for item in transformed_data])
+                    
+                    # Débugging des dates
+                    for item in transformed_data:
+                        if isinstance(item, dict):
+                            key = item.get('key', '')
+                        else:
+                            key = str(item)
+                        date_value = extract_date(item)
+                        _logger.info("Key: %s => Date value: %s", key, date_value)
+                    
+                    transformed_data.sort(key=extract_date, reverse=reverse)
+                    # Log après tri
+                    _logger.info("After sorting (reverse=%s): %s", reverse, [item.get('key') for item in transformed_data])
+                else:
+                    # Tri normal par clé, en respectant la direction
+                    reverse = (sort_direction == 'desc')
+                    transformed_data.sort(key=lambda x: x.get('key', ''), reverse=reverse)
+            except Exception as e:
+                _logger.warning("Error sorting graph data: %s", e)
     
         return transformed_data
     
