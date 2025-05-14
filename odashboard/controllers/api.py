@@ -180,18 +180,24 @@ class OdashAPI(http.Controller):
         
         return date_values
     
-    def _generate_empty_combinations(self, model, group_by_list, domain):
-        """Generate all combinations for fields with show_empty=True."""
+    def _generate_empty_combinations(self, model, group_by_list, domain, results):
+        """Generate all combinations for fields with show_empty=True.
+        Takes into account existing values for fields without show_empty.
+        """
+        # Split fields with and without show_empty
         show_empty_fields = []
+        non_show_empty_fields = []
         all_values = {}
         
-        # Identify fields with show_empty and get their values
         for gb in group_by_list:
             field = gb.get('field')
+            if not field:
+                continue
+                
             show_empty = gb.get('show_empty', False)
+            interval = gb.get('interval')
             
-            if show_empty and field:
-                interval = gb.get('interval')
+            if show_empty:
                 show_empty_fields.append((field, interval))
                 
                 if model._fields[field].type in ['date', 'datetime']:
@@ -202,17 +208,46 @@ class OdashAPI(http.Controller):
                 else:
                     # For other fields, get all possible values
                     all_values[(field, interval)] = self._get_field_values(model, field, domain)
+            else:
+                non_show_empty_fields.append((field, interval))
         
         if not show_empty_fields:
             return []
+            
+        # For fields without show_empty, use only values that exist in results
+        existing_values = {}
+        for field, interval in non_show_empty_fields:
+            field_with_interval = f"{field}:{interval}" if interval else field
+            values = set()
+            for result in results:
+                val = result.get(field_with_interval)
+                if val is not None:
+                    values.add(val)
+            existing_values[(field, interval)] = list(values)
         
-        # Generate all combinations
-        fields_to_combine = [all_values.get((f, i), []) for f, i in show_empty_fields]
-        field_names = [f for f, _ in show_empty_fields]
+        # Prepare for all combinations
+        all_fields = non_show_empty_fields + show_empty_fields
+        all_fields_values = []
+        all_field_names = []
         
-        # Use itertools.product to get all combinations
-        combinations = list(itertools.product(*fields_to_combine))
-        return [dict(zip(field_names, combo)) for combo in combinations]
+        for field, interval in all_fields:
+            if (field, interval) in existing_values:
+                # Field without show_empty - use existing values
+                values = existing_values[(field, interval)]
+            else:
+                # Field with show_empty - use all possible values
+                values = all_values[(field, interval)]
+                
+            if values:  # Only add if there are values
+                all_fields_values.append(values)
+                all_field_names.append(field)
+        
+        if not all_fields_values:
+            return []
+            
+        # Generate all valid combinations
+        combinations = list(itertools.product(*all_fields_values))
+        return [dict(zip(all_field_names, combo)) for combo in combinations]
     
     def _handle_show_empty(self, results, model, group_by_list, domain, measures=None):
         """Handle show_empty for groupBy fields by filling in missing combinations."""
@@ -220,7 +255,7 @@ class OdashAPI(http.Controller):
             return results  # No show_empty, return original results
         
         # Generate all possible combinations for show_empty fields
-        all_combinations = self._generate_empty_combinations(model, group_by_list, domain)
+        all_combinations = self._generate_empty_combinations(model, group_by_list, domain, results)
         if not all_combinations:
             return results
         
@@ -437,11 +472,16 @@ class OdashAPI(http.Controller):
                 # Sometimes read_group adds suffixes to the field names
                 primary_value = result[primary_field_with_interval]
             
-            # Format primary value if it's a many2one field (tuple with id and name)
+            # Format primary value for cleaner display
             formatted_primary_value = primary_value
+            
+            # For many2one fields as tuples (id, name)
             if isinstance(primary_value, tuple) and len(primary_value) == 2:
-                # For many2one fields, extract just the display name
                 formatted_primary_value = primary_value[1]
+            
+            # For many2one fields from _get_field_values as dict {'id': id, 'display_name': name}
+            elif isinstance(primary_value, dict) and 'display_name' in primary_value:
+                formatted_primary_value = primary_value['display_name']
                 
             # Create or get the group for this primary value
             if primary_value not in primary_groups:
@@ -461,10 +501,14 @@ class OdashAPI(http.Controller):
                     
                     # Format the secondary field value correctly
                     formatted_sec_value = sec_value
+                    
+                    # For many2one fields as tuples (id, name)
                     if sec_value and isinstance(sec_value, tuple) and len(sec_value) == 2:
-                        # For many2one fields, we get a tuple (id, name)
-                        # Extract just the display name for cleaner output
                         formatted_sec_value = sec_value[1]
+                    
+                    # For many2one fields from _get_field_values as dict {'id': id, 'display_name': name}
+                    elif sec_value and isinstance(sec_value, dict) and 'display_name' in sec_value:
+                        formatted_sec_value = sec_value['display_name'] # display name for cleaner output
                     
                     # Construct the key for this measure and secondary field value
                     measure_key = f"{field}|{formatted_sec_value}" if sec_field else field
