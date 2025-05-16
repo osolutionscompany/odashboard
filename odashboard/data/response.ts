@@ -890,8 +890,6 @@
           state: "draft",
         },
       ],
-      expiresAt: 1744633518109,
-      configHash: "-7c198e20",
     },
     "sale.order-DataBlock-18da88fc-424a-4fc8-a1c6-97fd79c187f2": {
       data: {
