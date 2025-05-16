@@ -5,5 +5,10 @@
             <field name="key">odashboard.api.endpoint</field>
             <field name="value">https://api.odashboard.app</field>
         </record>
+        
+        <record id="param_odashboard_github_base_url" model="ir.config_parameter">
+            <field name="key">odashboard.github_base_url</field>
+            <field name="value">https://raw.githubusercontent.com/Notdoo/odashboard.engine/main/</field>
+        </record>
     </data>
 </odoo>
