@@ -1104,7 +1104,7 @@ class OdashAPI(http.Controller):
                 
                 # Add domain for each row
                 for result in results:
-                    row_domain = list(domain)  # Start with base domain
+                    row_domain = []  # Démarrer avec un domaine vide, sans inclure le domaine d'entrée
                     
                     # Add domain elements for each groupby field
                     for gb_field in groupby_fields:
@@ -1156,9 +1156,9 @@ class OdashAPI(http.Controller):
                     order=order_string
                 )
                 
-                # Add domain for each record
+                # Add domain for each record - uniquement l'ID, sans le domaine d'entrée
                 for record in records:
-                    record['odash.domain'] = expression.AND([[('id', '=', record['id'])], domain])
+                    record['odash.domain'] = [('id', '=', record['id'])]
                 
                 return {
                     'data': records,
