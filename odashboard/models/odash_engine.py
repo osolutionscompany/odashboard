@@ -23,13 +23,13 @@ class DashboardEngine(models.Model):
                       help="Python code for the dashboard visualization engine")
     previous_code = fields.Text(string='Previous Engine Code', readonly=True,
                                help="Previous version of the engine code (for fallback)")
-    install_date = fields.Datetime(string='Install Date', readonly=True)
-    last_update_date = fields.Datetime(string='Last Update Date', readonly=True)
-    last_check_date = fields.Datetime(string='Last Check Date', readonly=True)
-    auto_update = fields.Boolean(string='Auto Update', default=True,
-                               help="Check for updates automatically")
     update_log = fields.Text(string='Update Log', readonly=True,
                             help="Log of update attempts and results")
+
+    # TODO : réfléchir a une version au cas où on push de la merde
+    # Plutôt avoir un système de newsletter qui explique la nouvelle version
+    # Lien vers code de la nouvelle version
+    # Et bouton dans les config pour mettre à jour
 
     @api.model
     def _get_github_base_url(self):
@@ -38,17 +38,6 @@ class DashboardEngine(models.Model):
             'odashboard.github_base_url', 
             'https://raw.githubusercontent.com/Notdoo/odashboard.engine/main/'
         )
-
-    @api.model
-    def _get_local_engine_path(self):
-        """Get the local path for engine.py file.
-        This is used during development to load engine code directly from the local filesystem.
-        """
-        return self.env['ir.config_parameter'].sudo().get_param(
-            'odashboard.local_engine_path',
-            '/Users/julienmasson/Projects/Odoo/perso/osolutions/odashboard_engine/versions/1.0.0/engine.py'
-        )
-
     @api.model
     def _get_versions_url(self):
         """Get the URL for versions.json file."""
@@ -72,9 +61,6 @@ class DashboardEngine(models.Model):
                 'version': '1.0.0',
                 'code': code,
                 'previous_code': code,
-                'install_date': fields.Datetime.now(),
-                'last_update_date': fields.Datetime.now(),
-                'last_check_date': fields.Datetime.now(),
             })
         return engine
 
@@ -93,9 +79,6 @@ class DashboardEngine(models.Model):
         engine = self
         
         try:
-            # Update last check date
-            engine.write({'last_check_date': fields.Datetime.now()})
-            
             # Fetch versions.json from GitHub
             versions_url = self._get_versions_url()
             _logger.info(f"Checking for updates at: {versions_url}")
@@ -183,7 +166,6 @@ class DashboardEngine(models.Model):
                 'previous_code': current_code,
                 'code': new_code,
                 'version': new_version,
-                'last_update_date': fields.Datetime.now(),
             })
             
             message = f"Successfully updated to version {new_version}: {version_info.get('description', 'No description')}"
@@ -261,15 +243,3 @@ class DashboardEngine(models.Model):
                     return {'error': f"Error in engine execution: {str(e)}. Fallback also failed: {str(fallback_error)}"}
             
             return {'error': f"Error in engine execution: {str(e)}"}
-
-    @api.model
-    def auto_check_updates(self):
-        """
-        Automatically check for updates if enabled.
-        This can be called by a scheduled action.
-        """
-        engine = self._get_single_record()
-        if engine.auto_update:
-            _logger.info("Automatically checking for engine updates")
-            engine.check_for_updates()
-        return True

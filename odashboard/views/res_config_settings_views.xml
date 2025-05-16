@@ -81,6 +81,37 @@
                                     </div>
                                 </div>
                             </block>
+                            
+                            <block title="Engine Management" name="odashboard_engine_container">
+                                <div class="row mt16 o_settings_container" id="odashboard_engine_settings">
+                                    <div class="col-12 col-lg-6 o_setting_box" id="odashboard_engine_version">
+                                        <div class="o_setting_left_pane"/>
+                                        <div class="o_setting_right_pane">
+                                            <span class="o_form_label">Engine Version</span>
+                                            <div class="text-muted">
+                                                Current version of the Odashboard visualization engine
+                                            </div>
+                                            <div class="content-group">
+                                                <div class="mt16">
+                                                    <field name="odashboard_engine_version" readonly="1" class="o_form_field"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-lg-6 o_setting_box" id="odashboard_engine_actions">
+                                        <div class="o_setting_left_pane"/>
+                                        <div class="o_setting_right_pane">
+                                            <span class="o_form_label">Engine Updates</span>
+                                            <div class="text-muted">
+                                                Check for and apply the latest version of the visualization engine
+                                            </div>
+                                            <div class="mt16">
+                                                <button name="action_check_engine_updates" string="Check for Updates" type="object" class="btn btn-primary"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </block>
                         </div>
                     </app>
                 </xpath>

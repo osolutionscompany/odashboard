@@ -140,14 +140,10 @@ class OdashboardAPI(http.Controller):
             engine_model = request.env['odash.engine'].sudo()
             engine = engine_model._get_single_record()
             
-            # Check for updates if enabled
-            if engine.auto_update:
-                # Only check once per day maximum
-                last_check = engine.last_check_date
-                now = fields.Datetime.now()
-                if not last_check or (now - last_check).total_seconds() > 86400 or not engine.code:
-                    _logger.info("Checking for engine updates")
-                    engine.check_for_updates()
+            # Vérifier les mises à jour seulement si le code n'a jamais été chargé
+            if not engine.code:
+                _logger.info("First initialization: checking for engine updates")
+                engine.check_for_updates()
             
             # Parse JSON request data
             try:
