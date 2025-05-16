@@ -1,25 +1,223 @@
-# Imports
-from odoo import http, fields as odoo_fields 
-from odoo.http import request, Response
-from odoo.osv import expression 
 import json
 import logging
 import itertools 
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date, timedelta
 import calendar
 import re
 from dateutil.relativedelta import relativedelta
 
+from odoo import http
+from odoo.http import request, Response
+
+from .api_helper import ApiHelper
+
 _logger = logging.getLogger(__name__)
 
-# Custom JSON encoder for handling dates
+
 class OdashboardJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, (datetime, date)):
             return obj.isoformat()
         return super(OdashboardJSONEncoder, self).default(obj)
 
-class OdashAPI(http.Controller):
+
+class OdashboardAPI(http.Controller):
+
+    @http.route(['/api/odash/access'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
+    def get_access(self, **kw):
+        token = request.env['ir.config_parameter'].sudo().get_param('odashboard.api.token')
+        return ApiHelper.json_valid_response(token, 200)
+
+    @http.route(['/api/osolution/refresh-token/<string:uuid>/<string:key>'], type='http', auth='none', csrf=False,
+                methods=['GET'], cors="*")
+    def refresh_token(self, uuid, key, **kw):
+        uuid_param = request.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
+        key_param = request.env['ir.config_parameter'].sudo().get_param('odashboard.key')
+
+        if uuid_param == uuid and key_param == key:
+            request.env["odash.dashboard"].sudo().update_auth_token()
+        return ApiHelper.json_valid_response("ok", 200)
+
+    @http.route(['/api/get/models'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
+    def get_models(self, **kw):
+        """
+        Return a list of models relevant for analytics, automatically filtering out technical models
+
+        :return: JSON response with list of analytically relevant models
+        """
+        try:
+            _logger.info("API call: Fetching list of analytically relevant models")
+
+            # Create domain to filter models directly in the search
+            # 1. Must be non-transient
+            domain = [('transient', '=', False)]
+
+            # 2. Exclude technical models using NOT LIKE conditions
+            technical_prefixes = ['ir.', 'base.', 'bus.', 'base_import.',
+                                  'web.', 'mail.', 'auth.', 'report.',
+                                  'resource.', 'wizard.']
+            for prefix in technical_prefixes:
+                domain.append(('model', 'not like', f'{prefix}%'))
+
+            # Models starting with underscore
+            domain.append(('model', 'not like', '\\_%'))
+
+            """
+            # TODO : Améliorer le filtrage des modèles
+                     # 3. Include only analytical models using OR conditions with LIKE
+            analytical_domain = ['|'] * (14 - 1)  # 13 patterns minus 1
+            analytical_domain += [
+                ('model', 'like', 'sale.%'),
+                ('model', 'like', 'account.%'),
+                ('model', 'like', 'crm.%'),
+                ('model', 'like', 'product.%'),
+                ('model', 'like', 'purchase.%'),
+                ('model', 'like', 'stock.%'),
+                ('model', 'like', 'project.%'),
+                ('model', 'like', 'hr.%'),
+                ('model', 'like', 'pos.%'),
+                ('model', 'like', 'mrp.%'),
+                ('model', 'like', 'website_sale.%'),
+                ('model', 'like', 'event.%'),
+                ('model', 'like', 'marketing.%'),
+                ('model', 'like', 'res.%'),
+            ]
+
+            # Combine all conditions
+            domain = domain + analytical_domain
+
+            """
+
+            # Execute the optimized search
+            model_obj = request.env['ir.model'].sudo()
+            models = model_obj.search(domain)
+
+            _logger.info("Found %s analytical models", len(models))
+
+            # Format the response with the already filtered models
+            model_list = [{
+                'name': model.name,
+                'model': model.model,
+            } for model in models]
+
+            return ApiHelper.json_valid_response(model_list, 200)
+
+        except Exception as e:
+            _logger.error("Error in API get_models: %s", str(e))
+            error_response = {
+                'success': False,
+                'error': str(e)
+            }
+            response = Response(
+                json.dumps(error_response, cls=OdashboardJSONEncoder),
+                content_type='application/json',
+                status=500
+            )
+            return response
+
+    @http.route(['/api/get/model_fields/<string:model_name>'], type='http', auth='api_key_dashboard', csrf=False,
+                methods=['GET'], cors="*")
+    def get_model_fields(self, model_name, **kw):
+        """
+        Retrieve information about the fields of a specific Odoo model.
+
+        :param model_name: Name of the Odoo model (example: 'sale.order')
+        :return: JSON with information about the model's fields
+        """
+        try:
+            _logger.info("API call: Fetching fields info for model: %s", model_name)
+
+            # Check if the model exists
+            if model_name not in request.env:
+                return self._build_response({'success': False, 'error': f"Model '{model_name}' not found"}, status=404)
+
+            # Get field information
+            model_obj = request.env[model_name].sudo()
+            fields_info = self._get_fields_info(model_obj)
+
+            return self._build_response({'success': True, 'data': fields_info}, 200)
+
+        except Exception as e:
+            _logger.error("Error in API get_model_fields: %s", str(e))
+            return self._build_response({'success': False, 'error': str(e)}, status=500)
+
+    @http.route('/api/get/dashboard', type='http', auth='none', csrf=False, methods=['POST'], cors='*')
+    def get_dashboard_data(self):
+        """Main endpoint to get dashboard visualization data.
+        Accepts JSON configurations for blocks, graphs, and tables.
+        """
+        results = {}
+
+        try:
+            # Parse JSON request data
+            try:
+                request_data = json.loads(request.httprequest.data.decode('utf-8'))
+                if not isinstance(request_data, list):
+                    request_data = [request_data]
+            except Exception as e:
+                _logger.error("Error parsing JSON data: %s", e)
+                return self._build_response({'error': 'Invalid JSON format'}, 400)
+
+            # Process each visualization request
+            for config in request_data:
+                config_id = config.get('id')
+                if not config_id:
+                    continue
+
+                try:
+                    # Extract configuration parameters
+                    viz_type = config.get('type')
+                    model_name = config.get('model')
+                    data_source = config.get('data_source', {})
+
+                    # Validate essential parameters
+                    if not all([viz_type, model_name]):
+                        results[config_id] = {'error': 'Missing required parameters: type, model'}
+                        continue
+
+                    # Check if model exists
+                    try:
+                        model = request.env[model_name].sudo()
+                    except KeyError:
+                        results[config_id] = {'error': f'Model not found: {model_name}'}
+                        continue
+
+                    # Extract common parameters
+                    domain = data_source.get('domain', [])
+                    group_by = data_source.get('groupBy', [])
+                    order_by = data_source.get('orderBy', {})
+                    order_string = None
+                    if order_by:
+                        field = order_by.get('field')
+                        direction = order_by.get('direction', 'asc')
+                        if field:
+                            order_string = f"{field} {direction}"
+
+                    # Check if SQL request is provided
+                    sql_request = data_source.get('sqlRequest')
+
+                    # Process based on visualization type
+                    if sql_request and viz_type in ['graph', 'table']:
+                        # Handle SQL request (with security measures)
+                        results[config_id] = self._process_sql_request(sql_request, viz_type, config)
+                    elif viz_type == 'block':
+                        results[config_id] = self._process_block(model, domain, config)
+                    elif viz_type == 'graph':
+                        results[config_id] = self._process_graph(model, domain, group_by, order_string, config)
+                    elif viz_type == 'table':
+                        results[config_id] = self._process_table(model, domain, group_by, order_string, config)
+                    else:
+                        results[config_id] = {'error': f'Unsupported visualization type: {viz_type}'}
+
+                except Exception as e:
+                    _logger.exception("Error processing visualization %s:", config_id)
+                    results[config_id] = {'error': str(e)}
+
+            return self._build_response(results)
+
+        except Exception as e:
+            _logger.exception("Unhandled error in get_dashboard_data:")
+            return self._build_response({'error': str(e)}, 500)
     
     def _build_response(self, data, status=200):
         """Build a consistent JSON response with the given data and status."""
@@ -1211,81 +1409,3 @@ class OdashAPI(http.Controller):
             return {'error': str(e)}
         
         return {'error': 'Unexpected error in SQL processing'}
-    
-    @http.route('/api/get/dashboard', type='http', auth='none', csrf=False, methods=['POST'], cors='*')
-    def get_dashboard_data(self):
-        """Main endpoint to get dashboard visualization data.
-        Accepts JSON configurations for blocks, graphs, and tables.
-        """
-        results = {}
-        
-        try:
-            # Parse JSON request data
-            try:
-                request_data = json.loads(request.httprequest.data.decode('utf-8'))
-                if not isinstance(request_data, list):
-                    request_data = [request_data]
-            except Exception as e:
-                _logger.error("Error parsing JSON data: %s", e)
-                return self._build_response({'error': 'Invalid JSON format'}, 400)
-                
-            # Process each visualization request
-            for config in request_data:
-                config_id = config.get('id')
-                if not config_id:
-                    continue
-                    
-                try:
-                    # Extract configuration parameters
-                    viz_type = config.get('type')
-                    model_name = config.get('model')
-                    data_source = config.get('data_source', {})
-                    
-                    # Validate essential parameters
-                    if not all([viz_type, model_name]):
-                        results[config_id] = {'error': 'Missing required parameters: type, model'}
-                        continue
-                        
-                    # Check if model exists
-                    try:
-                        model = request.env[model_name].sudo()
-                    except KeyError:
-                        results[config_id] = {'error': f'Model not found: {model_name}'}
-                        continue
-                    
-                    # Extract common parameters
-                    domain = data_source.get('domain', [])
-                    group_by = data_source.get('groupBy', [])
-                    order_by = data_source.get('orderBy', {})
-                    order_string = None
-                    if order_by:
-                        field = order_by.get('field')
-                        direction = order_by.get('direction', 'asc')
-                        if field:
-                            order_string = f"{field} {direction}"
-                    
-                    # Check if SQL request is provided
-                    sql_request = data_source.get('sqlRequest')
-                    
-                    # Process based on visualization type
-                    if sql_request and viz_type in ['graph', 'table']:
-                        # Handle SQL request (with security measures)
-                        results[config_id] = self._process_sql_request(sql_request, viz_type, config)
-                    elif viz_type == 'block':
-                        results[config_id] = self._process_block(model, domain, config)
-                    elif viz_type == 'graph':
-                        results[config_id] = self._process_graph(model, domain, group_by, order_string, config)
-                    elif viz_type == 'table':
-                        results[config_id] = self._process_table(model, domain, group_by, order_string, config)
-                    else:
-                        results[config_id] = {'error': f'Unsupported visualization type: {viz_type}'}
-                        
-                except Exception as e:
-                    _logger.exception("Error processing visualization %s:", config_id)
-                    results[config_id] = {'error': str(e)}
-            
-            return self._build_response(results)
-            
-        except Exception as e:
-            _logger.exception("Unhandled error in get_dashboard_data:")
-            return self._build_response({'error': str(e)}, 500)
