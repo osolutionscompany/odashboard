@@ -1,4 +1,4 @@
-from odoo import models, fields, api, _
+from odoo import models, fields, api, _, tools
 import logging
 import requests
 import json
@@ -61,10 +61,9 @@ class DashboardEngine(models.Model):
         engine = self.search([], limit=1)
         if not engine:
             # Initialize with embedded code if no record exists
-            from odoo.modules.module import get_module_resource
-            code_path = get_module_resource('odashboard', 'static', 'src', 'engine', 'engine.py')
+            code_path = tools.misc.file_path('odashboard', 'static', 'src', 'engine', 'engine.py')
             code = ''
-            if code_path:
+            if os.path.exists(code_path):
                 with open(code_path, 'r') as f:
                     code = f.read()
             
