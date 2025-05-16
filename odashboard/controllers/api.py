@@ -623,21 +623,120 @@ class OdashAPI(http.Controller):
             try:
                 # Use SQL for better performance on large datasets
                 agg_func = aggregation.upper()
+                
+                # Construit la clause WHERE et les paramètres de façon sécurisée
                 if not domain:
                     where_clause = "TRUE"
                     where_params = []
                 else:
-                    query = model._where_calc(domain)
-                    where_clause = query.where_clause and query.where_clause[0] or "TRUE"
-                    where_params = query.where_clause_params or []
+                    # Au lieu d'utiliser _where_calc directement, utilisons search pour obtenir la requête
+                    # C'est une façon plus sûre et robuste de générer la clause WHERE
+                    records = model.search(domain)
+                    if not records:
+                        where_clause = "FALSE"  # Aucun enregistrement correspondant
+                        where_params = []
+                    else:
+                        id_list = records.ids
+                        where_clause = f"{model._table}.id IN %s"
+                        where_params = [tuple(id_list) if len(id_list) > 1 else (id_list[0],)]
                     
-                query = f"""
-                    SELECT {agg_func}({field}) as value
-                    FROM {model._table}
-                    WHERE {where_clause}
-                """
-                request.env.cr.execute(query, where_params)
-                value = request.env.cr.fetchone()[0] or 0
+                # Solution plus fiable et unifiée pour toutes les agrégations
+                try:
+                    _logger.info("Processing %s aggregation for field %s", agg_func, field)
+                    
+                    # Vérifier d'abord s'il y a des enregistrements
+                    count_query = f"""
+                        SELECT COUNT(*) as count
+                        FROM {model._table}
+                        WHERE {where_clause}
+                    """
+                    request.env.cr.execute(count_query, where_params)
+                    count_result = request.env.cr.fetchone()
+                    count = 0
+                    if count_result and len(count_result) > 0:
+                        count = count_result[0] if count_result[0] is not None else 0
+                    
+                    _logger.info("Found %s records matching the criteria", count)
+                    
+                    # Si aucun enregistrement, renvoyer 0 pour toutes les agrégations
+                    if count == 0:
+                        value = 0
+                        _logger.info("No records found, using default value 0")
+                    else:
+                        # Calculer l'agrégation selon le type
+                        if agg_func == 'AVG':
+                            # Calculer la somme pour la moyenne
+                            sum_query = f"""
+                                SELECT SUM({field}) as total
+                                FROM {model._table}
+                                WHERE {where_clause}
+                            """
+                            request.env.cr.execute(sum_query, where_params)
+                            sum_result = request.env.cr.fetchone()
+                            total = 0
+                            
+                            if sum_result and len(sum_result) > 0:
+                                total = sum_result[0] if sum_result[0] is not None else 0
+                            
+                            # Calculer la moyenne
+                            value = total / count if count > 0 else 0
+                            _logger.info("Calculated AVG manually: total=%s, count=%s, avg=%s", total, count, value)
+                        elif agg_func == 'MAX':
+                            # Calculer le maximum
+                            max_query = f"""
+                                SELECT {field} as max_value
+                                FROM {model._table}
+                                WHERE {where_clause} AND {field} IS NOT NULL
+                                ORDER BY {field} DESC
+                                LIMIT 1
+                            """
+                            request.env.cr.execute(max_query, where_params)
+                            max_result = request.env.cr.fetchone()
+                            value = 0
+                            
+                            if max_result and len(max_result) > 0:
+                                value = max_result[0] if max_result[0] is not None else 0
+                            
+                            _logger.info("Calculated MAX manually: %s", value)
+                        elif agg_func == 'MIN':
+                            # Calculer le minimum
+                            min_query = f"""
+                                SELECT {field} as min_value
+                                FROM {model._table}
+                                WHERE {where_clause} AND {field} IS NOT NULL
+                                ORDER BY {field} ASC
+                                LIMIT 1
+                            """
+                            request.env.cr.execute(min_query, where_params)
+                            min_result = request.env.cr.fetchone()
+                            value = 0
+                            
+                            if min_result and len(min_result) > 0:
+                                value = min_result[0] if min_result[0] is not None else 0
+                            
+                            _logger.info("Calculated MIN manually: %s", value)
+                        elif agg_func == 'SUM':
+                            # Calculer la somme
+                            sum_query = f"""
+                                SELECT SUM({field}) as total
+                                FROM {model._table}
+                                WHERE {where_clause}
+                            """
+                            request.env.cr.execute(sum_query, where_params)
+                            sum_result = request.env.cr.fetchone()
+                            value = 0
+                            
+                            if sum_result and len(sum_result) > 0:
+                                value = sum_result[0] if sum_result[0] is not None else 0
+                            
+                            _logger.info("Calculated SUM manually: %s", value)
+                        else:
+                            # Fonction d'agrégation non reconnue
+                            value = 0
+                            _logger.warning("Unrecognized aggregation function: %s", agg_func)
+                except Exception as e:
+                    _logger.exception("Error calculating %s for %s: %s", agg_func, field, e)
+                    value = 0
                 
                 return {
                     'data': {
