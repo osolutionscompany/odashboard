@@ -105,8 +105,14 @@
                                             <div class="text-muted">
                                                 Check for and apply the latest version of the visualization engine
                                             </div>
-                                            <div class="mt16">
-                                                <button name="action_check_engine_updates" string="Check for Updates" type="object" class="btn btn-primary"/>
+                                            <div class="mt16 d-flex align-items-center">
+                                                <button name="action_check_engine_updates" string="Check for Updates" type="object" class="btn btn-primary me-2"/>
+                                                <a href="https://odashboard.app/devblog" target="_blank" class="btn btn-secondary">
+                                                    <i class="fa fa-external-link"></i> Dev Blog
+                                                </a>
+                                            </div>
+                                            <div class="text-muted mt-2">
+                                                Visit our Developer Blog to learn about the latest features and improvements
                                             </div>
                                         </div>
                                     </div>
