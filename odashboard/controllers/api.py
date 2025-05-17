@@ -43,34 +43,21 @@ class OdashboardAPI(http.Controller):
         """
         try:
             _logger.info("API call: Fetching list of analytically relevant models")
-
-            # Create domain to filter models directly in the search
-            # 1. Must be non-transient
-            domain = [('transient', '=', False)]
-
-            # 2. Exclude technical models using NOT LIKE conditions
-            technical_prefixes = ['ir.', 'base.', 'bus.', 'base_import.',
-                                'web.', 'mail.', 'auth.', 'report.',
-                                'resource.', 'wizard.']
-            for prefix in technical_prefixes:
-                domain.append(('model', 'not like', f'{prefix}%'))
-
-            # Models starting with underscore
-            domain.append(('model', 'not like', '\\_%'))
-
-            # Execute the optimized search
-            model_obj = request.env['ir.model'].sudo()
-            models = model_obj.search(domain)
-
-            _logger.info("Found %s analytical models", len(models))
-
-            # Format the response with the already filtered models
-            model_list = [{
-                'name': model.name,
-                'model': model.model,
-            } for model in models]
-
-            return ApiHelper.json_valid_response(model_list, 200)
+            
+            # Get the engine instance
+            engine_model = request.env['odash.engine'].sudo()
+            engine = engine_model._get_single_record()
+            
+            # Use the engine to get the models
+            result = engine.execute_engine_code('get_models', request.env)
+            
+            if result.get('success'):
+                return ApiHelper.json_valid_response(result.get('data', []), 200)
+            else:
+                return ApiHelper.json_valid_response({
+                    'success': False,
+                    'error': result.get('error', 'Unknown error')
+                }, 500)
 
         except Exception as e:
             _logger.error("Error in API get_models: %s", str(e))
@@ -96,40 +83,26 @@ class OdashboardAPI(http.Controller):
         """
         try:
             _logger.info("API call: Fetching fields info for model: %s", model_name)
-
-            # Check if the model exists
-            if model_name not in request.env:
-                return self._build_response({'success': False, 'error': f"Model '{model_name}' not found"}, status=404)
-
-            # Get field information
-            model_obj = request.env[model_name].sudo()
             
-            # Get fields info
-            fields_info = {}
-            for name, field in model_obj._fields.items():
-                # Skip binary fields and function fields without a store
-                if field.type == 'binary' or (field.compute and not field.store):
-                    continue
-                    
-                # Get field properties
-                field_info = {
-                    'type': field.type,
-                    'string': field.string,
-                    'relation': field.comodel_name if hasattr(field, 'comodel_name') else None,
-                    'store': field.store if hasattr(field, 'store') else True,
-                    'required': field.required,
-                    'readonly': field.readonly,
-                }
-                
-                fields_info[name] = field_info
-
-            return self._build_response({'success': True, 'data': fields_info}, 200)
+            # Get the engine instance
+            engine_model = request.env['odash.engine'].sudo()
+            engine = engine_model._get_single_record()
+            
+            # Use the engine to get the model fields
+            result = engine.execute_engine_code('get_model_fields', model_name, request.env)
+            
+            # Build appropriate response based on result
+            if result.get('success'):
+                return self._build_response({'success': True, 'data': result.get('data', {})}, 200)
+            else:
+                status = 404 if "not found" in str(result.get('error', '')) else 500
+                return self._build_response({'success': False, 'error': result.get('error', 'Unknown error')}, status=status)
 
         except Exception as e:
             _logger.error("Error in API get_model_fields: %s", str(e))
             return self._build_response({'success': False, 'error': str(e)}, status=500)
 
-    @http.route('/api/get/dashboard', type='http', auth='none', csrf=False, methods=['POST'], cors='*')
+    @http.route('/api/get/dashboard', type='http', auth='api_key_dashboard', csrf=False, methods=['POST'], cors='*')
     def get_dashboard_data(self):
         """Main endpoint to get dashboard visualization data.
         Accepts JSON configurations for blocks, graphs, and tables.
