@@ -107,7 +107,7 @@
                                             </div>
                                             <div class="mt16 d-flex align-items-center">
                                                 <button name="action_check_engine_updates" string="Check for Updates" type="object" class="btn btn-primary me-2"/>
-                                                <a href="https://odashboard.app/devblog" target="_blank" class="btn btn-secondary">
+                                                <a href="https://odashboard.app/devblog" target="_blank" class="btn btn-secondary" role="button">
                                                     <i class="fa fa-external-link"></i> Dev Blog
                                                 </a>
                                             </div>
