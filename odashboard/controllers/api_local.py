@@ -27,7 +27,7 @@ class OdashboardJSONEncoder(json.JSONEncoder):
 
 class OdashboardAPI(http.Controller):
 
-    @http.route(['/api/odash/access'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
+    @http.route(['/api/odash/access'], type='http', auth='none', csrf=False, methods=['GET'], cors="*")
     def get_access(self, **kw):
         token = request.env['ir.config_parameter'].sudo().get_param('odashboard.api.token')
         return ApiHelper.json_valid_response(token, 200)
@@ -42,7 +42,7 @@ class OdashboardAPI(http.Controller):
             request.env["odash.dashboard"].sudo().update_auth_token()
         return ApiHelper.json_valid_response("ok", 200)
 
-    @http.route(['/api/get/models'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
+    @http.route(['/api/get/models'], type='http', auth='none', csrf=False, methods=['GET'], cors="*")
     def get_models(self, **kw):
         """
         Return a list of models relevant for analytics, automatically filtering out technical models
@@ -119,7 +119,7 @@ class OdashboardAPI(http.Controller):
             )
             return response
 
-    @http.route(['/api/get/model_fields/<string:model_name>'], type='http', auth='api_key_dashboard', csrf=False,
+    @http.route(['/api/get/model_fields/<string:model_name>'], type='http', auth='none', csrf=False,
                 methods=['GET'], cors="*")
     def get_model_fields(self, model_name, **kw):
         """
@@ -139,11 +139,72 @@ class OdashboardAPI(http.Controller):
             model_obj = request.env[model_name].sudo()
             fields_info = self._get_fields_info(model_obj)
 
-            return self._build_response({'success': True, 'data': fields_info}, 200)
+            return self._build_response(fields_info, 200)
 
         except Exception as e:
             _logger.error("Error in API get_model_fields: %s", str(e))
             return self._build_response({'success': False, 'error': str(e)}, status=500)
+        
+    def _get_fields_info(self, model):
+        """
+        Get information about all fields of an Odoo model.
+        
+        :param model: Odoo model object
+        :return: List of field information
+        """
+        fields_info = []
+
+        # Get fields from the model
+        fields_data = model.fields_get()
+
+        # Fields to exclude
+        excluded_field_types = ['binary', 'one2many', 'many2many', 'text']  # Binary fields like images in base64
+        excluded_field_names = [
+            '__last_update',
+            'write_date', 'write_uid', 'create_uid',
+        ]
+
+        # Fields prefixed with these strings will be excluded
+        excluded_prefixes = ['message_', 'activity_', 'has_', 'is_', 'x_studio_']
+
+        for field_name, field_data in fields_data.items():
+            field_type = field_data.get('type', 'unknown')
+
+            # Skip fields that match our exclusion criteria
+            if (field_type in excluded_field_types or
+                field_name in excluded_field_names or
+                any(field_name.startswith(prefix) for prefix in excluded_prefixes)):
+                continue
+
+            # Check if it's a computed field that's not stored
+            field_obj = model._fields.get(field_name)
+            if field_obj and field_obj.compute and not field_obj.store:
+                _logger.debug("Skipping non-stored computed field: %s", field_name)
+                continue
+
+            # Create field info object for response
+            field_info = {
+                'field': field_name,
+                'name': field_data.get('string', field_name),
+                'type': field_type,
+                'label': field_data.get('string', field_name),
+                'value': field_name,
+                'search': f"{field_name} {field_data.get('string', field_name)}"
+            }
+
+            # Add selection options if field is a selection
+            if field_data.get('type') == 'selection' and 'selection' in field_data:
+                field_info['selection'] = [
+                    {'value': value, 'label': label}
+                    for value, label in field_data['selection']
+                ]
+
+            fields_info.append(field_info)
+
+        # Sort fields by name for better readability
+        fields_info.sort(key=lambda x: x['name'])
+
+        return fields_info
 
     @http.route('/api/get/dashboard', type='http', auth='none', csrf=False, methods=['POST'], cors='*')
     def get_dashboard_data(self):
@@ -217,7 +278,7 @@ class OdashboardAPI(http.Controller):
                     _logger.exception("Error processing visualization %s:", config_id)
                     results[config_id] = {'error': str(e)}
 
-            return self._build_response(results)
+            return self._build_response([results], 200)
 
         except Exception as e:
             _logger.exception("Unhandled error in get_dashboard_data:")
@@ -774,6 +835,44 @@ class OdashboardAPI(http.Controller):
         domain = []
         
         for field, value in group_by_values.items():
+            # Handle standard date fields that might need interval processing
+            if field in ['date', 'create_date', 'write_date'] or field.endswith('_date'):
+                # Format "DD MMM YYYY" (ex: "11 Apr 2025")
+                if isinstance(value, str) and re.match(r'\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}', value):
+                    try:
+                        # Parse the date string
+                        parts = value.split(' ')
+                        if len(parts) == 3:
+                            day = int(parts[0])
+                            month_str = parts[1]
+                            year = int(parts[2])
+                            
+                            # Map month name to number
+                            month_map = {
+                                'Jan': 1, 'January': 1, 'Feb': 2, 'February': 2,
+                                'Mar': 3, 'March': 3, 'Apr': 4, 'April': 4,
+                                'May': 5, 'Jun': 6, 'June': 6, 'Jul': 7, 'July': 7,
+                                'Aug': 8, 'August': 8, 'Sep': 9, 'Sept': 9, 'September': 9,
+                                'Oct': 10, 'October': 10, 'Nov': 11, 'November': 11,
+                                'Dec': 12, 'December': 12
+                            }
+                            
+                            if month_str in month_map:
+                                month = month_map[month_str]
+                                
+                                # Create start and end of day for the date
+                                start_datetime = datetime(year, month, day, 0, 0, 0)
+                                end_datetime = datetime(year, month, day, 23, 59, 59)
+                                
+                                # Add the date range to the domain
+                                domain.append([field, '>=', start_datetime.isoformat()])
+                                domain.append([field, '<=', end_datetime.isoformat()])
+                                continue
+                    except Exception as e:
+                        _logger.error("Error parsing date in domain: %s - %s", value, str(e))
+                        # Fall through to default handling
+                
+            # Handle week pattern specifically
             if isinstance(value, str) and re.match(r'W\d{1,2}\s+\d{4}', value):
                 # Handle week format by getting date range
                 start_date, end_date = self._parse_date_from_string(value, return_range=True)
@@ -790,6 +889,31 @@ class OdashboardAPI(http.Controller):
                     end_date = date(int(year), int(month), calendar.monthrange(int(year), int(month))[1])
                     domain.append([base_field, '>=', start_date.isoformat()])
                     domain.append([base_field, '<=', end_date.isoformat()])
+                elif interval == 'day' and isinstance(value, str):
+                    # Try to parse day format and create a range
+                    try:
+                        # Get date object using our extract_date function logic
+                        date_formats = ['%d %b %Y', '%Y-%m-%d']
+                        date_obj = None
+                        
+                        for fmt in date_formats:
+                            try:
+                                date_obj = datetime.strptime(value, fmt).date()
+                                break
+                            except ValueError:
+                                continue
+                                
+                        if date_obj:
+                            start_dt = datetime.combine(date_obj, time.min)
+                            end_dt = datetime.combine(date_obj, time.max)
+                            domain.append([base_field, '>=', start_dt.isoformat()])
+                            domain.append([base_field, '<=', end_dt.isoformat()])
+                            continue
+                    except Exception as e:
+                        _logger.error("Error parsing day interval: %s - %s", value, str(e))
+                    
+                    # Default fallback if parsing fails
+                    domain.append([field, '=', value])
                 else:
                     # Direct comparison for other formats
                     domain.append([field, '=', value])
@@ -965,6 +1089,11 @@ class OdashboardAPI(http.Controller):
         
         # Prepare groupby fields for read_group
         groupby_fields = []
+
+        # Transform into list
+        if not isinstance(group_by_list, list):
+            group_by_list = [group_by_list]
+
         for gb in group_by_list:
             field = gb.get('field')
             interval = gb.get('interval')
@@ -1096,28 +1225,43 @@ class OdashboardAPI(http.Controller):
                     'odash.domain': self._build_odash_domain({domain_field: primary_value})
                 }
             
-            # Process secondary fields and measures
-            for sec_field, sec_field_with_interval in secondary_fields:
-                sec_value = result.get(sec_field_with_interval)
-                
-                # Add measure values with secondary field in the key
+            # Process secondary fields and measures if they exist
+            if secondary_fields:
+                for sec_field, sec_field_with_interval in secondary_fields:
+                    sec_value = result.get(sec_field_with_interval)
+                    
+                    # Add measure values with secondary field in the key
+                    for measure in measures:
+                        field = measure.get('field')
+                        agg = measure.get('aggregation', 'sum')
+                        
+                        # Format the secondary field value correctly
+                        formatted_sec_value = sec_value
+                        
+                        # For many2one fields as tuples (id, name)
+                        if sec_value and isinstance(sec_value, tuple) and len(sec_value) == 2:
+                            formatted_sec_value = sec_value[1]
+                        
+                        # For many2one fields from _get_field_values as dict {'id': id, 'display_name': name}
+                        elif sec_value and isinstance(sec_value, dict) and 'display_name' in sec_value:
+                            formatted_sec_value = sec_value['display_name'] # display name for cleaner output
+                        
+                        # Construct the key for this measure and secondary field value
+                        measure_key = f"{field}|{formatted_sec_value}" if sec_field else field
+                        
+                        # Get the measure value from the result
+                        if agg == 'count':
+                            measure_value = result.get('__count', 0)
+                        else:
+                            measure_value = result.get(field, 0)
+                        
+                        # Add to the primary group
+                        primary_groups[dict_key][measure_key] = measure_value
+            # If no secondary fields, add measures directly to primary groups
+            else:
                 for measure in measures:
                     field = measure.get('field')
                     agg = measure.get('aggregation', 'sum')
-                    
-                    # Format the secondary field value correctly
-                    formatted_sec_value = sec_value
-                    
-                    # For many2one fields as tuples (id, name)
-                    if sec_value and isinstance(sec_value, tuple) and len(sec_value) == 2:
-                        formatted_sec_value = sec_value[1]
-                    
-                    # For many2one fields from _get_field_values as dict {'id': id, 'display_name': name}
-                    elif sec_value and isinstance(sec_value, dict) and 'display_name' in sec_value:
-                        formatted_sec_value = sec_value['display_name'] # display name for cleaner output
-                    
-                    # Construct the key for this measure and secondary field value
-                    measure_key = f"{field}|{formatted_sec_value}" if sec_field else field
                     
                     # Get the measure value from the result
                     if agg == 'count':
@@ -1126,7 +1270,7 @@ class OdashboardAPI(http.Controller):
                         measure_value = result.get(field, 0)
                     
                     # Add to the primary group
-                    primary_groups[dict_key][measure_key] = measure_value
+                    primary_groups[dict_key][field] = measure_value
         
         # Convert the dictionary to a list
         transformed_data = list(primary_groups.values())
@@ -1166,10 +1310,10 @@ class OdashboardAPI(http.Controller):
                             key = item.get('key', '')
                             
                         try:
-                            # Traitement spécial pour les mois au format "Apr 2025" ou "April 2025"
+                            # Traitement spécial pour les dates au format "DD MMM YYYY" (ex: "11 Apr 2025")
                             if ' ' in key and not key.startswith('W') and not key.startswith('Q'):
                                 try:
-                                    month_part, year_part = key.split(' ')
+                                    parts = key.split(' ')
                                     # Table de correspondance pour les noms de mois complets et abréviations
                                     month_map = {
                                         'Jan': 1, 'January': 1,
@@ -1186,15 +1330,24 @@ class OdashboardAPI(http.Controller):
                                         'Dec': 12, 'December': 12
                                     }
                                     
-                                    if month_part in month_map:
-                                        month_num = month_map[month_part]
-                                        year_num = int(year_part)
+                                    # Format "DD MMM YYYY" (ex: "11 Apr 2025")
+                                    if len(parts) == 3 and parts[1] in month_map:
+                                        day_num = int(parts[0])
+                                        month_num = month_map[parts[1]]
+                                        year_num = int(parts[2])
+                                        date_obj = datetime(year_num, month_num, day_num)
+                                        _logger.info("Key: %s => Date value: %s", key, date_obj)
+                                        return date_obj
+                                    # Format "MMM YYYY" (ex: "Apr 2025")
+                                    elif len(parts) == 2 and parts[0] in month_map:
+                                        month_num = month_map[parts[0]]
+                                        year_num = int(parts[1])
                                         # Créer la date du premier jour du mois
                                         date_obj = datetime(year_num, month_num, 1)
-                                        _logger.info("Converted month %s to date %s", key, date_obj)
+                                        _logger.info("Key: %s => Date value: %s", key, date_obj)
                                         return date_obj
                                 except Exception as e:
-                                    _logger.error("Failed to parse month format %s: %s", key, e)
+                                    _logger.error("Failed to parse date format %s: %s", key, e)
                             
                             # Traitement spécial pour les semaines au format "W15 2025"
                             if key.startswith('W') and ' ' in key:

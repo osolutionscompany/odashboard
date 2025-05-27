@@ -41,37 +41,23 @@ class OdashboardAPI(http.Controller):
 
         :return: JSON response with list of analytically relevant models
         """
-        try:
-            _logger.info("API call: Fetching list of analytically relevant models")
-            
-            # Get the engine instance
-            engine_model = request.env['odash.engine'].sudo()
-            engine = engine_model._get_single_record()
-            
-            # Use the engine to get the models
-            result = engine.execute_engine_code('get_models', request.env)
-            
-            if result.get('success'):
-                return ApiHelper.json_valid_response(result.get('data', []), 200)
-            else:
-                return ApiHelper.json_valid_response({
-                    'success': False,
-                    'error': result.get('error', 'Unknown error')
-                }, 500)
+        _logger.info("API call: Fetching list of analytically relevant models")
 
-        except Exception as e:
-            _logger.error("Error in API get_models: %s", str(e))
-            error_response = {
+        # Get the engine instance
+        engine_model = request.env['odash.engine'].sudo()
+        engine = engine_model._get_single_record()
+
+        # Use the engine to get the models
+        result = engine.execute_engine_code('get_models', request.env)
+
+        if result.get('success'):
+            return ApiHelper.json_valid_response(result.get('data', []), 200)
+        else:
+            return ApiHelper.json_valid_response({
                 'success': False,
-                'error': str(e)
-            }
-            response = Response(
-                json.dumps(error_response, cls=OdashboardJSONEncoder),
-                content_type='application/json',
-                status=500
-            )
-            return response
-            
+                'error': result.get('error', 'Unknown error')
+            }, 500)
+
     @http.route(['/api/get/model_fields/<string:model_name>'], type='http', auth='api_key_dashboard', csrf=False,
                 methods=['GET'], cors="*")
     def get_model_fields(self, model_name, **kw):
@@ -81,65 +67,44 @@ class OdashboardAPI(http.Controller):
         :param model_name: Name of the Odoo model (example: 'sale.order')
         :return: JSON with information about the model's fields
         """
-        try:
-            _logger.info("API call: Fetching fields info for model: %s", model_name)
-            
-            # Get the engine instance
-            engine_model = request.env['odash.engine'].sudo()
-            engine = engine_model._get_single_record()
-            
-            # Use the engine to get the model fields
-            result = engine.execute_engine_code('get_model_fields', model_name, request.env)
-            
-            # Build appropriate response based on result
-            if result.get('success'):
-                return self._build_response({'success': True, 'data': result.get('data', {})}, 200)
-            else:
-                status = 404 if "not found" in str(result.get('error', '')) else 500
-                return self._build_response({'success': False, 'error': result.get('error', 'Unknown error')}, status=status)
+        _logger.info("API call: Fetching fields info for model: %s", model_name)
 
-        except Exception as e:
-            _logger.error("Error in API get_model_fields: %s", str(e))
-            return self._build_response({'success': False, 'error': str(e)}, status=500)
+        # Get the engine instance
+        engine_model = request.env['odash.engine'].sudo()
+        engine = engine_model._get_single_record()
+
+        # Use the engine to get the model fields
+        result = engine.execute_engine_code('get_model_fields', model_name, request.env)
+
+        return self._build_response(result.get('data', {}), 200)
 
     @http.route('/api/get/dashboard', type='http', auth='api_key_dashboard', csrf=False, methods=['POST'], cors='*')
     def get_dashboard_data(self):
-        """Main endpoint to get dashboard visualization data.
+        """
+        Main endpoint to get dashboard visualization data.
         Accepts JSON configurations for blocks, graphs, and tables.
         Uses the dynamic dashboard engine for processing.
         """
-        try:
-            # Get the engine instance
-            engine_model = request.env['odash.engine'].sudo()
-            engine = engine_model._get_single_record()
-            
-            # Vérifier les mises à jour seulement si le code n'a jamais été chargé
-            if not engine.code:
-                _logger.info("First initialization: checking for engine updates")
-                engine.check_for_updates()
-            
-            # Parse JSON request data
-            try:
-                request_data = json.loads(request.httprequest.data.decode('utf-8'))
-            except Exception as e:
-                _logger.error("Error parsing JSON data: %s", e)
-                return self._build_response({'error': 'Invalid JSON format'}, 400)
-            
-            # Use the engine to process the dashboard request
-            # The engine now handles all validation and processing
-            results = engine.execute_engine_code('process_dashboard_request', 
-                                               request_data, request.env)
-            
-            return self._build_response(results)
+        engine_model = request.env['odash.engine'].sudo()
+        engine = engine_model._get_single_record()
 
-        except Exception as e:
-            _logger.exception("Unhandled error in get_dashboard_data:")
-            return self._build_response({'error': str(e)}, 500)
-            
+        # Check update if there is no code
+        if not engine.code:
+            _logger.info("First initialization: checking for engine updates")
+            engine.check_for_updates()
+
+        request_data = json.loads(request.httprequest.data.decode('utf-8'))
+
+        # Use the engine to process the dashboard request
+        # The engine now handles all validation and processing
+        results = engine.execute_engine_code('process_dashboard_request',
+                                             request_data, request.env)
+
+        return self._build_response(results, 200)
+
     def _build_response(self, data, status=200):
         """Build a consistent JSON response with the given data and status."""
         headers = {'Content-Type': 'application/json'}
-        return Response(json.dumps(data, cls=OdashboardJSONEncoder), 
-                       status=status, 
-                       headers=headers)
-
+        return Response(json.dumps(data, cls=OdashboardJSONEncoder),
+                        status=status,
+                        headers=headers)
