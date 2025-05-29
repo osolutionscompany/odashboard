@@ -262,8 +262,7 @@ class OdashboardAPI(http.Controller):
                     sql_request = data_source.get('sqlRequest')
 
                     # Process based on visualization type
-                    if sql_request and viz_type in ['graph', 'table']:
-                        # Handle SQL request (with security measures)
+                    if sql_request:
                         results[config_id] = self._process_sql_request(sql_request, viz_type, config)
                     elif viz_type == 'block':
                         results[config_id] = self._process_block(model, domain, config)
@@ -1544,19 +1543,39 @@ class OdashboardAPI(http.Controller):
                 _logger.warning("Dangerous SQL detected for config ID %s: %s", config_id, sql_request)
                 return {'error': 'SQL contains prohibited operations'}
 
-            # Execute the SQL query (with LIMIT safeguard)
-            if 'LIMIT' not in sql_request.upper():
-                sql_request += " LIMIT 1000"  # Default limit for safety
-
             try:
                 request.env.cr.execute(sql_request)
                 results = request.env.cr.dictfetchall()
 
                 # Format data based on visualization type
                 if viz_type == 'graph':
-                    return {'data': results}  # Simple pass-through for now
+                    if results and isinstance(results[0], dict) and 'key' not in results[0]:
+                        transformed_results = []
+                        for row in results:
+                            if isinstance(row, dict) and row:
+                                new_row = {}
+                                keys = list(row.keys())
+                                if keys:
+                                    first_key = keys[0]
+                                    new_row['key'] = row[first_key]
+
+                                    for k in keys[1:]:
+                                        new_row[k] = row[k]
+
+                                    transformed_results.append(new_row)
+                                else:
+                                    transformed_results.append(row)
+                            else:
+                                transformed_results.append(row)
+                        return {'data': transformed_results}
+                    else:
+                        return {'data': results}
                 elif viz_type == 'table':
-                    return {'data': results, 'metadata': {'total_count': len(results)}}
+                    return {'data': results}
+                elif viz_type == 'block':
+                    results = results[0]
+                    results["label"] = config.get('block_options').get('field')
+                    return {'data': results}
 
             except Exception as e:
                 _logger.error("SQL execution error: %s", e)
