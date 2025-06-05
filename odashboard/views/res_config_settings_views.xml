@@ -60,6 +60,7 @@
                                                 <span class="fa fa-check text-success"/>
                                                 key is synchronized
                                             </div>
+                                            <field name="odashboard_key_synchronized" invisible="1"/>
                                         </div>
                                     </div>
                                     <div class="col-12 col-lg-6 o_setting_box"
