@@ -49,12 +49,22 @@ class DashboardEngine(models.Model):
         """Get or create the single engine record."""
         engine = self.search([], limit=1)
         if not engine:
-            # Initialize with embedded code if no record exists
-            code_path = tools.misc.file_path('odashboard', 'static', 'src', 'engine', 'engine.py')
+            # Initialize with default empty code - we'll download from GitHub later
             code = ''
-            if os.path.exists(code_path):
-                with open(code_path, 'r') as f:
-                    code = f.read()
+            try:
+                # Try to fetch initial engine code from GitHub if available
+                base_url = self._get_github_base_url()
+                code_url = f"{base_url}engine.py"
+                _logger.info(f"Fetching initial engine code from: {code_url}")
+                
+                response = requests.get(code_url, timeout=10)
+                if response.status_code == 200:
+                    code = response.text
+                    _logger.info("Successfully fetched initial engine code from GitHub")
+                else:
+                    _logger.warning(f"Failed to fetch initial engine code: HTTP {response.status_code}")
+            except Exception as e:
+                _logger.exception(f"Error fetching initial engine code: {str(e)}")
             
             engine = self.create({
                 'name': 'Dashboard Engine',

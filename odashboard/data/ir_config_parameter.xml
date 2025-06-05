@@ -3,7 +3,7 @@
     <data noupdate="1">
         <record id="odashboard_api_endpoint" model="ir.config_parameter">
             <field name="key">odashboard.api.endpoint</field>
-            <field name="value">https://api.odashboard.app</field>
+            <field name="value">https://odashboard.app</field>
         </record>
         
         <record id="param_odashboard_github_base_url" model="ir.config_parameter">
