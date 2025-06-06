@@ -1456,32 +1456,41 @@ class OdashboardAPI(http.Controller):
                 total_count = len(results)
                 results = results[offset:offset + limit] if limit else results
 
-                # Add domain for each row
+                # Add domain for each row and map aggregation fields to their specified columns
                 for result in results:
-                    row_domain = []  # Démarrer avec un domaine vide, sans inclure le domaine d'entrée
+                    # Map aggregation values based on column configuration
+                    if '__count' in result:
+                        result['count'] = result['__count']
+                        del result['__count']
 
-                    # Add domain elements for each groupby field
-                    for gb_field in groupby_fields:
-                        base_field = gb_field.split(':')[0] if ':' in gb_field else gb_field
-                        value = result.get(gb_field)
+                    if '__domain' in result:
+                        result['odash.domain'] = result['__domain']
+                        del result['__domain']
+                    else:
+                        row_domain = []  # Démarrer avec un domaine vide, sans inclure le domaine d'entrée
 
-                        if value is not None:
-                            if gb_field.endswith(':month') or gb_field.endswith(':week') or gb_field.endswith(
-                                    ':day') or gb_field.endswith(':year'):
-                                # Handle date intervals
-                                base_field = gb_field.split(':')[0]
-                                interval = gb_field.split(':')[1]
+                        # Add domain elements for each groupby field
+                        for gb_field in groupby_fields:
+                            base_field = gb_field.split(':')[0] if ':' in gb_field else gb_field
+                            value = result.get(gb_field)
 
-                                # Parse the date and build a range domain
-                                date_start, date_end = self._parse_date_from_string(str(value), return_range=True)
-                                if date_start and date_end:
-                                    row_domain.append([base_field, '>=', date_start.isoformat()])
-                                    row_domain.append([base_field, '<=', date_end.isoformat()])
-                            else:
-                                # Direct comparison for regular fields
-                                row_domain.append([base_field, '=', value])
+                            if value is not None:
+                                if gb_field.endswith(':month') or gb_field.endswith(':week') or gb_field.endswith(
+                                        ':day') or gb_field.endswith(':year'):
+                                    # Handle date intervals
+                                    base_field = gb_field.split(':')[0]
+                                    interval = gb_field.split(':')[1]
 
-                    result['odash.domain'] = row_domain
+                                    # Parse the date and build a range domain
+                                    date_start, date_end = self._parse_date_from_string(str(value), return_range=True)
+                                    if date_start and date_end:
+                                        row_domain.append([base_field, '>=', date_start.isoformat()])
+                                        row_domain.append([base_field, '<=', date_end.isoformat()])
+                                else:
+                                    # Direct comparison for regular fields
+                                    row_domain.append([base_field, '=', value])
+
+                        result['odash.domain'] = row_domain
 
                 return {
                     'data': results,
