@@ -1,0 +1,38 @@
+{
+  "id": "Graph-0556fa73-336e-49a9-84c5-0b8630e6d189",
+  "type": "graph",
+  "model": "crm.stage",
+  "title": "Nombre par étape CRM",
+  "data_source": {
+    "domain": [],
+    "groupBy": [
+      {
+        "field": "team_id"
+      }
+    ],
+    "orderBy": {
+      "field": "team_id",
+      "direction": "asc"
+    },
+    "dateFilterField": null
+  },
+  "graph_options": {
+    "theme": "default",
+    "xAxis": {
+      "field": "name",
+      "title": "Nom de l'étape",
+      "format": "default",
+      "showAxis": true,
+      "tickRotation": 0
+    },
+    "measures": [
+      {
+        "type": null,
+        "field": "id",
+        "yAxis": "left",
+        "aggregation": "count",
+        "displayName": "Nombre"
+      }
+    ]
+  }
+}

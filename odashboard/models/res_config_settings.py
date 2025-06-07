@@ -33,8 +33,7 @@ class ResConfigSettings(models.TransientModel):
         
         # Récupérer les informations du moteur
         engine = self.env['odash.engine'].sudo()._get_single_record()
-        latest_version = 'Non vérifiée'
-        
+
         res.update({
             'odashboard_uuid': uuid_param,
             'odashboard_engine_version': engine.version,

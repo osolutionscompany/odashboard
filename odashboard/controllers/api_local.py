@@ -10,6 +10,8 @@ import calendar
 import re
 from dateutil.relativedelta import relativedelta
 
+from odoo import api
+
 from odoo import http
 from odoo.http import request, Response
 
@@ -263,7 +265,12 @@ class OdashboardAPI(http.Controller):
 
                     # Process based on visualization type
                     if sql_request:
-                        results[config_id] = self._process_sql_request(sql_request, viz_type, config)
+                        """Exécute une requête SQL en annulant toute modification éventuelle."""
+                        with request.env.cr.savepoint():
+                            try:
+                                results[config_id] = self._process_sql_request(sql_request, viz_type, config)
+                            finally:
+                                request.env.cr.rollback()
                     elif viz_type == 'block':
                         results[config_id] = self._process_block(model, domain, config)
                     elif viz_type == 'graph':
@@ -920,7 +927,10 @@ class OdashboardAPI(http.Controller):
                     domain.append([field, '=', value])
             else:
                 # Regular field
-                domain.append([field, '=', value])
+                if isinstance(value, tuple) and len(value) > 1:
+                    domain.append([field, '=', value[0]])
+                else:
+                    domain.append([field, '=', value])
 
         # Return empty list if domain is identical to base_domain
         return domain if domain else []
@@ -1458,10 +1468,17 @@ class OdashboardAPI(http.Controller):
 
                 # Add domain for each row and map aggregation fields to their specified columns
                 for result in results:
+
+                    for fields in fields_to_read:
+                        if isinstance(result.get(fields, False), tuple) and len(result.get(fields)) > 1:
+                            result[field] = result[field][1]
+
                     # Map aggregation values based on column configuration
                     if '__count' in result:
-                        result['count'] = result['__count']
-                        del result['__count']
+                        for column in table_options['columns']:
+                            if column.get('aggregation', False) == 'count':
+                                result[column.get('field')] = result['__count']
+                                del result['__count']
 
                     if '__domain' in result:
                         result['odash.domain'] = result['__domain']
@@ -1539,59 +1556,42 @@ class OdashboardAPI(http.Controller):
 
     def _process_sql_request(self, sql_request, viz_type, config):
         """Process a SQL request with security measures."""
-        # SECURITY WARNING: Direct SQL execution from API requests is risky.
-        # This implementation includes safeguards but should be further reviewed.
-
-        config_id = config.get('id')
         try:
-            # Check for dangerous keywords (basic sanitization)
-            dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'CREATE', 'ALTER', 'TRUNCATE']
-            has_dangerous_keyword = any(keyword in sql_request.upper() for keyword in dangerous_keywords)
+            request.env.cr.execute(sql_request)
+            results = request.env.cr.dictfetchall()
 
-            if has_dangerous_keyword:
-                _logger.warning("Dangerous SQL detected for config ID %s: %s", config_id, sql_request)
-                return {'error': 'SQL contains prohibited operations'}
+            # Format data based on visualization type
+            if viz_type == 'graph':
+                if results and isinstance(results[0], dict) and 'key' not in results[0]:
+                    transformed_results = []
+                    for row in results:
+                        if isinstance(row, dict) and row:
+                            new_row = {}
+                            keys = list(row.keys())
+                            if keys:
+                                first_key = keys[0]
+                                new_row['key'] = row[first_key]
 
-            try:
-                request.env.cr.execute(sql_request)
-                results = request.env.cr.dictfetchall()
+                                for k in keys[1:]:
+                                    new_row[k] = row[k]
 
-                # Format data based on visualization type
-                if viz_type == 'graph':
-                    if results and isinstance(results[0], dict) and 'key' not in results[0]:
-                        transformed_results = []
-                        for row in results:
-                            if isinstance(row, dict) and row:
-                                new_row = {}
-                                keys = list(row.keys())
-                                if keys:
-                                    first_key = keys[0]
-                                    new_row['key'] = row[first_key]
-
-                                    for k in keys[1:]:
-                                        new_row[k] = row[k]
-
-                                    transformed_results.append(new_row)
-                                else:
-                                    transformed_results.append(row)
+                                transformed_results.append(new_row)
                             else:
                                 transformed_results.append(row)
-                        return {'data': transformed_results}
-                    else:
-                        return {'data': results}
-                elif viz_type == 'table':
+                        else:
+                            transformed_results.append(row)
+                    return {'data': transformed_results}
+                else:
                     return {'data': results}
-                elif viz_type == 'block':
-                    results = results[0]
-                    results["label"] = config.get('block_options').get('field')
-                    return {'data': results}
-
-            except Exception as e:
-                _logger.error("SQL execution error: %s", e)
-                return {'error': f'SQL error: {str(e)}'}
+            elif viz_type == 'table':
+                return {'data': results}
+            elif viz_type == 'block':
+                results = results[0]
+                results["label"] = config.get('block_options').get('field')
+                return {'data': results}
 
         except Exception as e:
-            _logger.exception("Error in _process_sql_request:")
-            return {'error': str(e)}
+            _logger.error("SQL execution error: %s", e)
+            return {'error': f'SQL error: {str(e)}'}
 
         return {'error': 'Unexpected error in SQL processing'}
