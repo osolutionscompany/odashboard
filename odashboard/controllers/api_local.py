@@ -263,14 +263,12 @@ class OdashboardAPI(http.Controller):
                     # Check if SQL request is provided
                     sql_request = data_source.get('sqlRequest')
 
-                    # Process based on visualization type
                     if sql_request:
                         """Exécute une requête SQL en annulant toute modification éventuelle."""
                         with request.env.cr.savepoint():
-                            try:
-                                results[config_id] = self._process_sql_request(sql_request, viz_type, config)
-                            finally:
-                                request.env.cr.rollback()
+                            # This creates a savepoint, executes the code, and releases the savepoint
+                            results[config_id] = self._process_sql_request(sql_request, viz_type, config)
+                            # No need for explicit rollback, changes are isolated in the savepoint
                     elif viz_type == 'block':
                         results[config_id] = self._process_block(model, domain, config)
                     elif viz_type == 'graph':

@@ -85,22 +85,23 @@ class OdashboardAPI(http.Controller):
         Accepts JSON configurations for blocks, graphs, and tables.
         Uses the dynamic dashboard engine for processing.
         """
-        engine_model = request.env['odash.engine'].sudo()
-        engine = engine_model._get_single_record()
+        with request.env.cr.savepoint():
+            engine_model = request.env['odash.engine'].sudo()
+            engine = engine_model._get_single_record()
 
-        # Check update if there is no code
-        if not engine.code:
-            _logger.info("First initialization: checking for engine updates")
-            engine.check_for_updates()
+            # Check update if there is no code
+            if not engine.code:
+                _logger.info("First initialization: checking for engine updates")
+                engine.check_for_updates()
 
-        request_data = json.loads(request.httprequest.data.decode('utf-8'))
+            request_data = json.loads(request.httprequest.data.decode('utf-8'))
 
-        # Use the engine to process the dashboard request
-        # The engine now handles all validation and processing
-        results = engine.execute_engine_code('process_dashboard_request',
-                                             request_data, request.env)
+            # Use the engine to process the dashboard request
+            # The engine now handles all validation and processing
+            results = engine.execute_engine_code('process_dashboard_request',
+                                                 request_data, request.env)
 
-        return self._build_response(results, 200)
+            return self._build_response(results, 200)
 
     def _build_response(self, data, status=200):
         """Build a consistent JSON response with the given data and status."""
