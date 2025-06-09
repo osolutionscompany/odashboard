@@ -26,11 +26,6 @@ class DashboardEngine(models.Model):
     update_log = fields.Text(string='Update Log', readonly=True,
                             help="Log of update attempts and results")
 
-    # TODO : réfléchir a une version au cas où on push de la merde
-    # Plutôt avoir un système de newsletter qui explique la nouvelle version
-    # Lien vers code de la nouvelle version
-    # Et bouton dans les config pour mettre à jour
-
     @api.model
     def _get_github_base_url(self):
         """Get the base URL for GitHub repository."""

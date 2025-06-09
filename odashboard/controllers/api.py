@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, date
 
-from odoo import http, fields
+from odoo import http
 from odoo.http import request, Response
 
 from .api_helper import ApiHelper
@@ -26,26 +26,24 @@ class OdashboardAPI(http.Controller):
 
     @http.route(['/api/osolution/refresh-token/<string:uuid>/<string:key>'], type='http', auth='none', csrf=False,
                 methods=['GET'], cors="*")
-    def refresh_token(self, uuid, key, **kw):
-        uuid_param = request.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
-        key_param = request.env['ir.config_parameter'].sudo().get_param('odashboard.key')
+    def refresh_token(self, uuid, key):
+        ConfigParameter = request.env['ir.config_parameter'].sudo()
+
+        uuid_param = ConfigParameter.get_param('odashboard.uuid')
+        key_param = ConfigParameter.get_param('odashboard.key')
 
         if uuid_param == uuid and key_param == key:
             request.env["odash.dashboard"].sudo().update_auth_token()
         return ApiHelper.json_valid_response("ok", 200)
 
     @http.route(['/api/get/models'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
-    def get_models(self, **kw):
+    def get_models(self):
         """
         Return a list of models relevant for analytics, automatically filtering out technical models
 
         :return: JSON response with list of analytically relevant models
         """
-        _logger.info("API call: Fetching list of analytically relevant models")
-
-        # Get the engine instance
-        engine_model = request.env['odash.engine'].sudo()
-        engine = engine_model._get_single_record()
+        engine = request.env['odash.engine'].sudo()
 
         # Use the engine to get the models
         result = engine.execute_engine_code('get_models', request.env)
@@ -67,11 +65,7 @@ class OdashboardAPI(http.Controller):
         :param model_name: Name of the Odoo model (example: 'sale.order')
         :return: JSON with information about the model's fields
         """
-        _logger.info("API call: Fetching fields info for model: %s", model_name)
-
-        # Get the engine instance
-        engine_model = request.env['odash.engine'].sudo()
-        engine = engine_model._get_single_record()
+        engine = request.env['odash.engine'].sudo()._get_single_record()
 
         # Use the engine to get the model fields
         result = engine.execute_engine_code('get_model_fields', model_name, request.env)
@@ -86,12 +80,10 @@ class OdashboardAPI(http.Controller):
         Uses the dynamic dashboard engine for processing.
         """
         with request.env.cr.savepoint():
-            engine_model = request.env['odash.engine'].sudo()
-            engine = engine_model._get_single_record()
+            engine = request.env['odash.engine'].sudo()._get_single_record()
 
             # Check update if there is no code
             if not engine.code:
-                _logger.info("First initialization: checking for engine updates")
                 engine.check_for_updates()
 
             request_data = json.loads(request.httprequest.data.decode('utf-8'))

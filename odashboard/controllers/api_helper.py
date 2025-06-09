@@ -5,8 +5,7 @@ from datetime import datetime, date
 from typing import Optional, Dict
 
 from odoo import _, models
-from odoo.http import Response, request
-
+from odoo.http import Response
 
 
 class ApiHelper:

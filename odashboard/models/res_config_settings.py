@@ -9,13 +9,10 @@ _logger = logging.getLogger(__name__)
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
-    # Paramètres d'authentification
     odashboard_key = fields.Char(string="Odashboard Key", config_parameter="odashboard.key")
     odashboard_key_synchronized = fields.Boolean(string="Key Synchronized",
                                                  config_parameter="odashboard.key_synchronized", readonly=True)
     odashboard_uuid = fields.Char(string="Instance UUID", config_parameter="odashboard.uuid", readonly=True)
-    
-    # Paramètres du moteur
     odashboard_engine_version = fields.Char(string="Version actuelle du moteur", readonly=True)
 
     def set_values(self):
@@ -25,13 +22,11 @@ class ResConfigSettings(models.TransientModel):
     def get_values(self):
         res = super(ResConfigSettings, self).get_values()
         
-        # Récupérer ou générer l'UUID
         uuid_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
         if not uuid_param:
             uuid_param = str(uuid.uuid4())
             self.env['ir.config_parameter'].sudo().set_param('odashboard.uuid', uuid_param)
         
-        # Récupérer les informations du moteur
         engine = self.env['odash.engine'].sudo()._get_single_record()
 
         res.update({
@@ -42,30 +37,28 @@ class ResConfigSettings(models.TransientModel):
         return res
         
     def action_check_engine_updates(self):
-        """Vérifier s'il existe des mises à jour pour le moteur Odashboard"""
+        """Check update for Odashboard engine"""
         engine = self.env['odash.engine'].sudo()._get_single_record()
         result = engine.check_for_updates()
         
-        # Si une mise à jour a été détectée et appliquée
         if result:
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
-                    'title': _('Mise à jour réussie'),
-                    'message': _('Le moteur Odashboard a été mis à jour vers la version %s') % engine.version,
+                    'title': _('Successful update'),
+                    'message': _('The Odashboard Engine has been updated to version %s') % engine.version,
                     'type': 'success',
                     'sticky': False,
                 }
             }
         else:
-            # Si aucune mise à jour n'est disponible ou en cas d'échec
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
                     'title': _('Information'),
-                    'message': _('Aucune mise à jour disponible. Vous utilisez déjà la dernière version (%s)') % engine.version,
+                    'message': _('No update available. You are already using the latest version (%s)') % engine.version,
                     'type': 'info',
                     'sticky': False,
                 }
@@ -73,6 +66,9 @@ class ResConfigSettings(models.TransientModel):
 
     def synchronize_key(self):
         """Synchronize the key with the license server"""
+
+        self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', True)
+
         if not self.odashboard_key:
             return {
                 'type': 'ir.actions.client',
