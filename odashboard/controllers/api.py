@@ -20,7 +20,7 @@ class OdashboardJSONEncoder(json.JSONEncoder):
 class OdashboardAPI(http.Controller):
 
     @http.route(['/api/odash/access'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
-    def get_access(self, **kw):
+    def get_access(self):
         token = request.env['ir.config_parameter'].sudo().get_param('odashboard.api.token')
         return ApiHelper.json_valid_response(token, 200)
 
