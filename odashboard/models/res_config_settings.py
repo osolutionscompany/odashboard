@@ -113,6 +113,7 @@ class ResConfigSettings(models.TransientModel):
                         }
                     else:
                         self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', True)
+                        self.env["odash.dashboard"].sudo().update_auth_token()
                         return {
                             'type': 'ir.actions.act_window',
                             'res_model': 'res.config.settings',
