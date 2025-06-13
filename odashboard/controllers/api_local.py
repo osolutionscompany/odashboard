@@ -1058,52 +1058,6 @@ class OdashboardAPI(http.Controller):
             _logger.exception("Error in _process_graph: %s", e)
             return {'error': f'Error processing graph data: {str(e)}'}
 
-    def process_grouped_data(model, domain, groupby_fields, measure_fields, measures, depth=0):
-        grouped_data = []
-        current_groupby = groupby_fields[depth]
-
-        results = model.read_group(
-            domain,
-            fields=measure_fields,
-            groupby=current_groupby,
-            orderby=current_groupby,
-            lazy=True
-        )
-
-        for result in results:
-            key = result[current_groupby]
-            base_data = {
-                'key': key,
-                'odash.domain': result['__domain']
-            }
-
-            if depth + 1 < len(groupby_fields):
-                # Sous-niveau : appel récursif
-                children = process_grouped_data(
-                    model,
-                    result['__domain'],
-                    groupby_fields,
-                    measure_fields,
-                    measures,
-                    depth=depth + 1
-                )
-
-                for child in children:
-                    child_data = base_data.copy()
-                    # Fusion des clés du sous-groupe dans les noms de colonnes
-                    for k, v in child.items():
-                        if k not in ('key', 'odash.domain'):
-                            child_data[f"{k}|{key}"] = v
-                    grouped_data.append(child_data)
-            else:
-                # Niveau le plus profond : insère les mesures
-                for measure in measures:
-                    field = measure['field']
-                    base_data[field] = result.get(field)
-                grouped_data.append(base_data)
-
-        return grouped_data
-
     def _process_table(self, model, domain, group_by_list, order_string, config):
         """Process table type visualization."""
         table_options = config.get('table_options', {})
