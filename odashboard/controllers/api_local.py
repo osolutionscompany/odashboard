@@ -150,7 +150,7 @@ class OdashboardAPI(http.Controller):
     def _get_fields_info(self, model):
         """
         Get information about all fields of an Odoo model.
-        
+
         :param model: Odoo model object
         :return: List of field information
         """
@@ -166,16 +166,11 @@ class OdashboardAPI(http.Controller):
             'write_date', 'write_uid', 'create_uid',
         ]
 
-        # Fields prefixed with these strings will be excluded
-        excluded_prefixes = ['message_', 'activity_', 'has_', 'is_', 'x_studio_']
-
         for field_name, field_data in fields_data.items():
             field_type = field_data.get('type', 'unknown')
 
             # Skip fields that match our exclusion criteria
-            if (field_type in excluded_field_types or
-                    field_name in excluded_field_names or
-                    any(field_name.startswith(prefix) for prefix in excluded_prefixes)):
+            if (field_type in excluded_field_types or field_name in excluded_field_names):
                 continue
 
             # Check if it's a computed field that's not stored
@@ -354,484 +349,6 @@ class OdashboardAPI(http.Controller):
             pass
 
         return None
-
-    def _get_field_values(self, model, field_name, domain=None):
-        """Get all possible values for a field in the model."""
-        domain = domain or []
-        field_info = model._fields.get(field_name)
-
-        if not field_info:
-            return []
-
-        if field_info.type == 'selection':
-            # Return all selection options
-            return [key for key, _ in field_info.selection]
-
-        elif field_info.type == 'many2one':
-            # Return all possible values for the relation
-            relation_model = model.env[field_info.comodel_name]
-            rel_values = relation_model.search_read([], ['id', 'display_name'])
-            return [{'id': r['id'], 'display_name': r['display_name']} for r in rel_values]
-
-        elif field_info.type in ['date', 'datetime']:
-            # Cette partie est gérée séparément avec _build_date_range
-            # basé sur l'intervalle et le domaine
-            return []
-
-        else:
-            # Pour les autres types de champs, récupérer toutes les valeurs existantes
-            records = model.search(domain)
-            # Filtrer les valeurs None pour éviter les problèmes
-            values = [v for v in list(set(records.mapped(field_name))) if v is not None]
-            return values
-
-    def _build_date_range(self, model, field_name, domain, interval='month'):
-        """Build a range of dates for show_empty functionality."""
-        # Approche plus simple et robuste - ignorer les requêtes SQL complexes
-        # et travailler directement avec les données du modèle
-        try:
-            # Définir une plage par défaut (derniers 3 mois)
-            today = date.today()
-            default_min_date = today - relativedelta(months=3)
-            default_max_date = today
-
-            # Récupérer tous les enregistrements correspondant au domaine
-            # et extraire les min/max dates directement des données Python
-            records = model.search(domain or [])
-            if records:
-                date_values = []
-                # Extraire les valeurs de date de tous les enregistrements
-                for record in records:
-                    field_value = record[field_name]
-                    if field_value:
-                        # Convertir en date si c'est un datetime
-                        if isinstance(field_value, datetime):
-                            field_value = field_value.date()
-                        date_values.append(field_value)
-
-                if date_values:
-                    min_date = min(date_values)
-                    max_date = max(date_values)
-                else:
-                    min_date = default_min_date
-                    max_date = default_max_date
-            else:
-                # Pas de données - utiliser les dates par défaut
-                min_date = default_min_date
-                max_date = default_max_date
-
-            # Limiter à 1 an maximum pour éviter les plages trop grandes
-            if (max_date - min_date).days > 365:
-                max_date = min_date + timedelta(days=365)
-                _logger.warning("Date range for %s limited to 1 year", field_name)
-        except Exception as e:
-            _logger.error("Error in _build_date_range for field %s: %s", field_name, e)
-            # En cas d'erreur, générer une plage par défaut (3 derniers mois)
-            min_date = date.today() - relativedelta(months=3)
-            max_date = date.today()
-
-        # Generate all intermediate dates based on interval
-        date_values = []
-        current_date = min_date
-
-        if interval == 'day':
-            delta = timedelta(days=1)
-            format_str = '%Y-%m-%d'
-        elif interval == 'week':
-            delta = timedelta(weeks=1)
-            # Use ISO week format
-            format_str = 'W%W %Y'
-        elif interval == 'month':
-            # For months, use a relative delta
-            delta = relativedelta(months=1)
-            format_str = '%Y-%m'
-        elif interval == 'quarter':
-            delta = relativedelta(months=3)
-            # Custom handling for quarters
-            format_str = 'Q%q %Y'
-        elif interval == 'year':
-            delta = relativedelta(years=1)
-            format_str = '%Y'
-        else:
-            # Default to month
-            delta = relativedelta(months=1)
-            format_str = '%Y-%m'
-
-        while current_date <= max_date:
-            # Format based on interval
-            if interval == 'week':
-                date_values.append(f"W{current_date.isocalendar()[1]} {current_date.year}")
-            elif interval == 'quarter':
-                quarter = (current_date.month - 1) // 3 + 1
-                date_values.append(f"Q{quarter} {current_date.year}")
-            else:
-                date_values.append(current_date.strftime(format_str))
-
-            # Move to next date
-            current_date += delta
-
-        return date_values
-
-    def _generate_empty_combinations(self, model, group_by_list, domain, results):
-        """Generate all combinations for fields with show_empty=True.
-        Takes into account existing values for fields without show_empty.
-        """
-        # Split fields with and without show_empty
-        show_empty_fields = []
-        non_show_empty_fields = []
-        all_values = {}
-
-        # Identifier les champs qui ont des valeurs NULL/None dans les résultats existants
-        # pour assurer la cohérence dans le traitement des valeurs NULL
-        fields_with_nulls = set()
-
-        for gb in group_by_list:
-            field = gb.get('field')
-            if not field:
-                continue
-
-            show_empty = gb.get('show_empty', False)
-            interval = gb.get('interval')
-
-            if show_empty and model._fields[field].type not in ['binary']:
-                show_empty_fields.append((field, interval))
-
-                if model._fields[field].type in ['date', 'datetime']:
-                    # Approche plus robuste : utiliser les dates réelles des données existantes
-                    # et y ajouter les dates récentes pour compléter
-                    date_values = []
-
-                    # 1. Utiliser notre propre requête SQL pour obtenir les dates min/max directement
-                    # à partir de la base de données, indépendamment des résultats intermédiaires
-                    try:
-                        # Trouver les dates min et max réelles dans la base de données
-                        min_max_query = f"""
-                            SELECT 
-                                MIN({field}::date) as min_date,
-                                MAX({field}::date) as max_date
-                            FROM {model._table}
-                            WHERE {field} IS NOT NULL
-                        """
-                        request.env.cr.execute(min_max_query)
-                        date_range = request.env.cr.fetchone()
-
-                        if date_range and date_range[0] and date_range[1]:
-                            db_min_date = date_range[0]  # Date minimum de la base
-                            db_max_date = date_range[1]  # Date maximum de la base
-
-                            # Filtrer les dates pour n'utiliser que celles qui ont réellement des données
-                            # Cela corrige le problème où show_empty génère trop de dates intermédiaires
-                            dates_with_data_query = f"""
-                                SELECT DISTINCT
-                                    EXTRACT(YEAR FROM {field}::date) as year,
-                                    EXTRACT(MONTH FROM {field}::date) as month
-                                FROM {model._table}
-                                WHERE {field} IS NOT NULL
-                                ORDER BY year, month
-                            """
-                            request.env.cr.execute(dates_with_data_query)
-                            dates_with_data = request.env.cr.fetchall()
-                            _logger.info("Found %s dates with data for field %s", len(dates_with_data), field)
-
-                            # Utiliser les dates min/max de la base de données pour générer une plage complète
-                            # C'est le comportement que l'utilisateur préfère
-
-                            # Assurer que nous avons aussi quelques semaines récentes
-                            today = date.today()
-                            actual_max_date = max(db_max_date, today)
-
-                            # 2. Générer toutes les valeurs selon l'intervalle
-                            if interval == 'week':
-                                # Convertir en début de semaine
-                                week_min = db_min_date - timedelta(days=db_min_date.weekday())
-                                week_max = actual_max_date + timedelta(days=(6 - actual_max_date.weekday()))
-
-                                # Limiter à une année pour éviter les plages trop longues
-                                if (week_max - week_min).days > 365:
-                                    week_min = week_max - timedelta(days=365)
-
-                                # Générer toutes les semaines complètes
-                                current = week_min
-                                while current <= week_max:
-                                    week_str = f"W{current.isocalendar()[1]} {current.year}"
-                                    date_values.append(week_str)
-                                    current += timedelta(days=7)
-
-                            elif interval == 'month':
-                                # Convertir en début de mois
-                                month_min = date(db_min_date.year, db_min_date.month, 1)
-                                month_max = date(actual_max_date.year, actual_max_date.month, 1)
-
-                                # Limiter à deux ans pour éviter les plages trop longues
-                                if (month_max.year - month_min.year) * 12 + (month_max.month - month_min.month) > 24:
-                                    month_min = date(month_max.year - 2, month_max.month, 1)
-
-                                # Générer tous les mois
-                                current = month_min
-                                while current <= month_max:
-                                    # Utiliser le format complet pour correspondre à ce que Odoo renvoie
-                                    date_values.append(current.strftime('%B %Y'))
-                                    current = (current.replace(day=28) + timedelta(days=4)).replace(
-                                        day=1)  # Prochain mois
-
-                            elif interval == 'quarter':
-                                # Convertir en début de trimestre
-                                q_min = db_min_date.month - 1
-                                q_min = q_min - (q_min % 3)
-                                quarter_min = date(db_min_date.year, q_min + 1 if q_min > 0 else 1, 1)
-
-                                q_max = actual_max_date.month - 1
-                                q_max = q_max - (q_max % 3)
-                                quarter_max = date(actual_max_date.year, q_max + 1 if q_max > 0 else 1, 1)
-
-                                # Générer tous les trimestres
-                                current = quarter_min
-                                while current <= quarter_max:
-                                    quarter = ((current.month - 1) // 3) + 1
-                                    date_values.append(f"Q{quarter} {current.year}")
-                                    current = date(current.year + (1 if current.month > 9 else 0),
-                                                   ((current.month - 1 + 3) % 12) + 1, 1)
-
-                            elif interval == 'year':
-                                for year in range(db_min_date.year, actual_max_date.year + 1):
-                                    date_values.append(str(year))
-
-                            else:  # day
-                                # Pour les jours, limiter à 60 jours maximum
-                                day_max = min(db_max_date, db_min_date + timedelta(days=60))
-                                current = db_min_date
-                                while current <= day_max:
-                                    date_values.append(current.strftime('%d %b %Y'))
-                                    current += timedelta(days=1)
-
-                        else:
-                            # Si pas de dates dans la BD, utiliser des dates récentes
-                            existing_dates = set()
-                            for r in results:
-                                if field in r and r[field]:
-                                    existing_dates.add(r[field])
-
-                            for date_val in existing_dates:
-                                if date_val:
-                                    date_values.append(date_val)
-                    except Exception as e:
-                        _logger.error("Error generating date values: %s", e)
-                        # En cas d'erreur, utiliser les dates des résultats
-                        existing_dates = set()
-                        for r in results:
-                            if field in r and r[field]:
-                                existing_dates.add(r[field])
-
-                        for date_val in existing_dates:
-                            if date_val:
-                                date_values.append(date_val)
-
-                    # 3. Si on n'a toujours pas assez de dates, ajouter des dates récentes
-                    if len(date_values) < 3:
-                        today = date.today()
-
-                        if interval == 'day':
-                            # Formatter les dates exactement comme Odoo
-                            for i in range(7):
-                                dt = today - timedelta(days=i)
-                                formatted = dt.strftime('%d %b %Y')  # Format: '11 Apr 2025'
-                                if formatted not in date_values:
-                                    date_values.append(formatted)
-                        elif interval == 'week':
-                            for i in range(4):
-                                week_date = today - timedelta(weeks=i)
-                                formatted = f"W{week_date.isocalendar()[1]} {week_date.year}"
-                                if formatted not in date_values:
-                                    date_values.append(formatted)
-                        elif interval == 'month':
-                            for i in range(6):
-                                month_date = today - relativedelta(months=i)
-                                formatted = month_date.strftime('%B %Y')  # Format: 'April 2025'
-                                if formatted not in date_values:
-                                    date_values.append(formatted)
-                        elif interval == 'quarter':
-                            for i in range(4):
-                                quarter_date = today - relativedelta(months=i * 3)
-                                quarter = (quarter_date.month - 1) // 3 + 1
-                                formatted = f"Q{quarter} {quarter_date.year}"
-                                if formatted not in date_values:
-                                    date_values.append(formatted)
-                        elif interval == 'year':
-                            for i in range(3):
-                                formatted = str(today.year - i)
-                                if formatted not in date_values:
-                                    date_values.append(formatted)
-
-                    # Utiliser cette plage fixe
-                    all_values[(field, interval)] = date_values
-                else:
-                    # Pour tous les autres types de champs
-                    all_values[(field, interval)] = self._get_field_values(model, field, domain)
-            else:
-                non_show_empty_fields.append((field, interval))
-
-        if not show_empty_fields:
-            return []
-
-        # For fields without show_empty, use only values that exist in results
-        existing_values = {}
-        for field, interval in non_show_empty_fields:
-            field_with_interval = f"{field}:{interval}" if interval else field
-            values = set()
-            for result in results:
-                val = result.get(field_with_interval)
-                if val is not None:
-                    values.add(val)
-            existing_values[(field, interval)] = list(values)
-
-        # Prepare for all combinations
-        all_fields = non_show_empty_fields + show_empty_fields
-        all_fields_values = []
-        all_field_names = []
-
-        for field, interval in all_fields:
-            if (field, interval) in existing_values:
-                # Field without show_empty - use existing values
-                values = existing_values[(field, interval)]
-            else:
-                # Field with show_empty - use all possible values
-                values = all_values[(field, interval)]
-
-            if values:  # Only add if there are values
-                all_fields_values.append(values)
-                all_field_names.append(field)
-
-        if not all_fields_values:
-            return []
-
-        # Générer toutes les combinaisons valides
-        # TOUJOURS utiliser des dictionnaires pour la cohérence des retours
-        if len(all_fields_values) == 1 and len(all_field_names) == 1:
-            # Cas spécial : un seul champ
-            field_name = all_field_names[0]
-            return [{field_name: value} for value in all_fields_values[0]]
-        elif len(all_fields_values) >= 1:
-            # Cas normal : plusieurs champs ou combinaisons
-            combinations = list(itertools.product(*all_fields_values))
-            return [dict(zip(all_field_names, combo)) for combo in combinations]
-        else:
-            # Cas où aucune valeur n'est trouvée
-            return []
-
-    def _handle_show_empty(self, results, model, group_by_list, domain, measures=None):
-        """Handle show_empty for groupBy fields by filling in missing combinations."""
-        if not any(gb.get('show_empty', False) for gb in group_by_list):
-            return results  # No show_empty, return original results
-
-        # Generate all possible combinations for show_empty fields
-        all_combinations = self._generate_empty_combinations(model, group_by_list, domain, results)
-        if not all_combinations:
-            return results
-
-        # Create a dictionary for easy lookup of existing results
-        existing_results = {}
-        for result in results:
-            # Create a key based on groupby field values
-            key_parts = []
-            for gb in group_by_list:
-                field = gb.get('field')
-                interval = gb.get('interval')
-                if field:
-                    field_with_interval = f"{field}:{interval}" if interval else field
-                    value = result.get(field_with_interval)
-
-                    # Format the value in a consistent way
-                    if isinstance(value, tuple) and len(value) == 2:
-                        # Extract the ID for consistent lookup
-                        formatted_value = value[0]
-                    elif isinstance(value, dict) and 'id' in value:
-                        # Extract the ID for consistent lookup
-                        formatted_value = value['id']
-                    else:
-                        formatted_value = value
-
-                    key_parts.append(str(formatted_value))
-
-            existing_results[tuple(key_parts)] = result
-
-        # Create combined results with empty values for missing combinations
-        combined_results = []
-
-        for combo in all_combinations:
-            # Create a key to check if this combination exists in results
-            key_parts = []
-            skip_combo = False
-
-            # S'assurer que combo est toujours un dictionnaire à ce stade
-            if not isinstance(combo, dict):
-                _logger.error("Unexpected non-dict combo in _handle_show_empty: %s", combo)
-                continue
-
-            for gb in group_by_list:
-                field = gb.get('field')
-                if field:
-                    value = combo.get(field, '')
-
-                    # Skip combinations with None values for date fields that don't have show_empty
-                    if value is None and not gb.get('show_empty', False):
-                        skip_combo = True
-                        break
-
-                    # Format the value in a consistent way
-                    if isinstance(value, tuple) and len(value) == 2:
-                        # Extract the ID for consistent lookup
-                        formatted_value = value[0]
-                    elif isinstance(value, dict) and 'id' in value:
-                        # Extract the ID for consistent lookup
-                        formatted_value = value['id']
-                    else:
-                        formatted_value = value
-
-                    key_parts.append(str(formatted_value))
-
-            # Skip this combination if it has None values for non-show_empty fields
-            if skip_combo:
-                continue
-
-            # S'assurer que la clé ne contient pas "None" comme valeur textuelle
-            # car ça crée des entrées indésirables
-            if "None" in key_parts:
-                continue
-
-            combo_key = tuple(key_parts)
-
-            if combo_key in existing_results:
-                # Use existing result
-                combined_results.append(existing_results[combo_key])
-            else:
-                # Create new empty result with correct structure
-                new_result = {}
-
-                # Add all accumulated measures with default values
-                for measure in measures or []:
-                    field = measure.get('field')
-                    agg = measure.get('aggregation')
-                    # Set default value (0 for numeric fields, False for others)
-                    new_result[field] = 0 if model._fields[field].type in ['float', 'monetary', 'integer'] else False
-
-                # Add combination values to result, avec les formats compatibles read_group
-                for gb in group_by_list:
-                    field = gb.get('field')
-                    interval = gb.get('interval')
-
-                    if field in combo:
-                        # Ajouter à la fois le champ original et le champ avec intervalle
-                        # pour assurer la compatibilité avec _transform_graph_data
-                        new_result[field] = combo[field]
-
-                        # Ajouter également avec le format field:interval pour assurer la compatibilité
-                        if interval:
-                            field_with_interval = f"{field}:{interval}"
-                            new_result[field_with_interval] = combo[field]
-
-                combined_results.append(new_result)
-
-        return combined_results
 
     def _process_block(self, model, domain, config):
         """Process block type visualization."""
@@ -1021,16 +538,18 @@ class OdashboardAPI(http.Controller):
                 lazy=True
             )
 
-            # Handle show_empty if needed
-            has_show_empty = any(gb.get('show_empty', False) for gb in group_by_list)
-            if has_show_empty:
-                results = self._handle_show_empty(results, model, group_by_list, domain, measures)
+            if 'show_empty' in group_by_list[0]:
+                if ':' in groupby_fields[0]:
+                    results = self.complete_missing_date_intervals(results)
+                else:
+                    results = self.complete_missing_selection_values(results, model, groupby_fields[0])
 
             # Transform results into the expected format
             transformed_data = []
             for result in results:
                 data = {
-                    'key': result[groupby_fields[0]],
+                    'key': result[groupby_fields[0]][1] if isinstance(result[groupby_fields[0]], tuple) or isinstance(
+                        result[groupby_fields[0]], list) else result[groupby_fields[0]],
                     'odash.domain': result['__domain']
                 }
 
@@ -1042,6 +561,12 @@ class OdashboardAPI(http.Controller):
                         orderby=groupby_fields[1],
                         lazy=True
                     )
+
+                    if 'show_empty' in group_by_list[1]:
+                        if ':' in groupby_fields[1]:
+                            sub_results = self.complete_missing_date_intervals(sub_results)
+                        else:
+                            sub_results = self.complete_missing_selection_values(sub_results, model, groupby_fields[1])
 
                     for sub_result in sub_results:
                         for measure in config['graph_options']['measures']:
@@ -1058,6 +583,199 @@ class OdashboardAPI(http.Controller):
             _logger.exception("Error in _process_graph: %s", e)
             return {'error': f'Error processing graph data: {str(e)}'}
 
+    def complete_missing_selection_values(self, results, model, field_name):
+        """
+        Fills in missing values in the results for fields of type selection or many2one
+
+        Args:
+         results (list): The read_group results
+         model (Model): The Odoo model on which the read_group was performed
+         field_name (str): The name of the field (without grouping suffix)
+
+        Returns:
+         list: List completed with missing values
+        """
+        if not results:
+            return results
+
+        field_info = model._fields.get(field_name)
+        if not field_info:
+            return results
+
+        field_type = field_info.type
+        if field_type not in ['selection', 'many2one']:
+            return results
+
+        all_possible_values = []
+
+        if field_type == 'selection':
+            if callable(field_info.selection):
+                selection_options = field_info.selection(model)
+            else:
+                selection_options = field_info.selection
+            all_possible_values = [value for value, _ in selection_options]
+
+        elif field_type == 'many2one':
+            related_model = request.env[field_info.comodel_name].sudo()
+            all_possible_values = related_model.search([]).ids
+
+        present_values = set()
+        groupby_field = field_name
+
+        for result in results:
+            for key in result.keys():
+                if key.split(':')[0] == field_name:
+                    groupby_field = key
+                    break
+
+        for result in results:
+            if groupby_field in result and result[groupby_field] is not None:
+                value = result[groupby_field]
+                if isinstance(value, (list, tuple)) and len(value) >= 2:
+                    present_values.add(value[0])
+                else:
+                    present_values.add(value)
+
+        missing_values = [v for v in all_possible_values if v not in present_values]
+
+        complete_results = list(results)
+
+        template = results[0] if results else None
+
+        if template and missing_values:
+            for missing_value in missing_values:
+                new_entry = {k: 0 if isinstance(v, (int, float)) else (None if v is None else v)
+                             for k, v in template.items() if k != groupby_field}
+
+                if field_type == 'selection':
+                    domain = [(field_name, '=', missing_value)]
+                else:  # many2one
+                    domain = [(field_name, '=', missing_value)]
+
+                new_entry[groupby_field] = missing_value
+
+                if field_type == 'many2one' and missing_value:
+                    related_model = request.env[field_info.comodel_name].sudo()
+                    record = related_model.browse(missing_value)
+                    if record.exists():
+                        new_entry[groupby_field] = [missing_value, record.display_name]
+
+                if '__domain' in template:
+                    new_entry['__domain'] = domain
+
+                if '__context' in template:
+                    new_entry['__context'] = template['__context']
+
+                complete_results.append(new_entry)
+
+        return complete_results
+
+    def complete_missing_date_intervals(self, results):
+        """
+        Fills in the missing intervals in the read_group results
+
+        Args:
+         results (list): Read_group results containing __range
+
+        Returns:
+         list: List completed with missing intervals
+        """
+        if not results or len(results) < 2:
+            return results
+
+        complete_results = [results[0]]  # On commence avec le premier résultat
+
+        interval_type = None
+        range_field = None
+
+        for key in results[0]['__range']:
+            if key.endswith(':day'):
+                interval_type = 'day'
+                range_field = key
+                break
+            elif key.endswith(':week'):
+                interval_type = 'week'
+                range_field = key
+                break
+            elif key.endswith(':month'):
+                interval_type = 'month'
+                range_field = key
+                break
+            elif key.endswith(':quarter'):
+                interval_type = 'quarter'
+                range_field = key
+                break
+            elif key.endswith(':year'):
+                interval_type = 'year'
+                range_field = key
+                break
+
+        if not interval_type:
+            return results
+
+        for i in range(1, len(results)):
+            prev_result = complete_results[-1]
+            curr_result = results[i]
+
+            prev_to = datetime.strptime(prev_result['__range'][range_field]['to'], '%Y-%m-%d %H:%M:%S')
+            curr_from = datetime.strptime(curr_result['__range'][range_field]['from'], '%Y-%m-%d %H:%M:%S')
+
+            if prev_to < curr_from:
+                next_date = prev_to
+
+                while next_date < curr_from:
+                    if interval_type == 'day':
+                        interval_end = next_date + timedelta(days=1)
+                        label = next_date.strftime('%Y-%m-%d')
+                    elif interval_type == 'week':
+                        interval_end = next_date + timedelta(weeks=1)
+                        label = f"W{next_date.isocalendar()[1]} {next_date.year}"
+                    elif interval_type == 'month':
+                        interval_end = next_date + relativedelta(months=1)
+                        label = next_date.strftime('%B %Y')
+                    elif interval_type == 'quarter':
+                        interval_end = next_date + relativedelta(months=3)
+                        quarter = (next_date.month - 1) // 3 + 1
+                        label = f"Q{quarter} {next_date.year}"
+                    elif interval_type == 'year':
+                        interval_end = next_date + relativedelta(years=1)
+                        label = str(next_date.year)
+
+                    base_field = range_field.split(':')[0]
+                    domain = [
+                        '&',
+                        (base_field, '>=', next_date.strftime('%Y-%m-%d %H:%M:%S')),
+                        (base_field, '<', interval_end.strftime('%Y-%m-%d %H:%M:%S'))
+                    ]
+
+                    missing_result = {
+                        range_field: label,
+                        '__range': {
+                            range_field: {
+                                'from': next_date.strftime('%Y-%m-%d %H:%M:%S'),
+                                'to': interval_end.strftime('%Y-%m-%d %H:%M:%S')
+                            }
+                        },
+                        '__domain': domain,
+                        '__context': curr_result.get('__context', {})
+                    }
+
+                    for key, value in curr_result.items():
+                        if key not in [range_field, '__range', '__domain', '__context']:
+                            if isinstance(value, (int, float)):
+                                missing_result[key] = 0
+                            elif value is None:
+                                missing_result[key] = None
+                            else:
+                                missing_result[key] = value
+
+                    complete_results.append(missing_result)
+                    next_date = interval_end
+
+            complete_results.append(curr_result)
+
+        return complete_results
+
     def _process_table(self, model, domain, group_by_list, order_string, config):
         """Process table type visualization."""
         table_options = config.get('table_options', {})
@@ -1071,134 +789,36 @@ class OdashboardAPI(http.Controller):
         # Extract fields to read
         fields_to_read = [col.get('field') for col in columns if col.get('field')]
 
-        # Check if grouping is required
-        if group_by_list:
-            # Table with grouping - use read_group
-            groupby_fields = []
-            has_show_empty = any(gb.get('show_empty', False) for gb in group_by_list)
+        # Simple table - use search_read
+        try:
+            # Count total records for pagination
+            total_count = model.search_count(domain)
 
-            for gb in group_by_list:
-                field = gb.get('field')
-                interval = gb.get('interval')
-                if field:
-                    groupby_fields.append(f"{field}:{interval}" if interval else field)
-                    if field not in fields_to_read:
-                        fields_to_read.append(field)
+            results = model.search_read(
+                domain,
+                fields=fields_to_read,
+                limit=limit,
+                offset=offset,
+                order=order_string
+            )
 
-            if not groupby_fields:
-                return {'error': "Invalid 'groupBy' configuration for grouped table"}
+            for result in results:
+                for key in result.keys():
+                    if isinstance(result[key], tuple):
+                        result[key] = result[key][1]
 
-            # Add __count field for the counts per group
-            fields_to_read.append('__count')
-
-            try:
-                # Execute read_group
-                results = model.read_group(
-                    domain,
-                    fields=fields_to_read,
-                    groupby=groupby_fields,
-                    orderby=order_string,
-                    lazy=False
-                )
-
-                # Handle show_empty if needed
-                if has_show_empty:
-                    results = self._handle_show_empty(results, model, group_by_list, domain)
-
-                # Format for table display
-                total_count = len(results)
-                results = results[offset:offset + limit] if limit else results
-
-                # Add domain for each row and map aggregation fields to their specified columns
-                for result in results:
-
-                    for fields in fields_to_read:
-                        if isinstance(result.get(fields, False), tuple) and len(result.get(fields)) > 1:
-                            result[field] = result[field][1]
-
-                    # Map aggregation values based on column configuration
-                    if '__count' in result:
-                        for column in table_options['columns']:
-                            if column.get('aggregation', False) == 'count':
-                                result[column.get('field')] = result['__count']
-                                del result['__count']
-
-                    if '__domain' in result:
-                        result['odash.domain'] = result['__domain']
-                        del result['__domain']
-                    else:
-                        row_domain = []  # Démarrer avec un domaine vide, sans inclure le domaine d'entrée
-
-                        # Add domain elements for each groupby field
-                        for gb_field in groupby_fields:
-                            base_field = gb_field.split(':')[0] if ':' in gb_field else gb_field
-                            value = result.get(gb_field)
-
-                            if value is not None:
-                                if gb_field.endswith(':month') or gb_field.endswith(':week') or gb_field.endswith(
-                                        ':day') or gb_field.endswith(':year'):
-                                    # Handle date intervals
-                                    base_field = gb_field.split(':')[0]
-                                    interval = gb_field.split(':')[1]
-
-                                    # Parse the date and build a range domain
-                                    date_start, date_end = self._parse_date_from_string(str(value), return_range=True)
-                                    if date_start and date_end:
-                                        row_domain.append([base_field, '>=', date_start.isoformat()])
-                                        row_domain.append([base_field, '<=', date_end.isoformat()])
-                                else:
-                                    # Direct comparison for regular fields
-                                    row_domain.append([base_field, '=', value])
-
-                        result['odash.domain'] = row_domain
-
-                return {
-                    'data': results,
-                    'metadata': {
-                        'page': offset // limit + 1 if limit else 1,
-                        'limit': limit,
-                        'total_count': total_count
-                    }
+            return {
+                'data': results,
+                'metadata': {
+                    'page': offset // limit + 1 if limit else 1,
+                    'limit': limit,
+                    'total_count': total_count
                 }
+            }
 
-            except Exception as e:
-                _logger.exception("Error in _process_table with groupBy: %s", e)
-                return {'error': f'Error processing grouped table: {str(e)}'}
-
-        else:
-            # Simple table - use search_read
-            try:
-                # Count total records for pagination
-                total_count = model.search_count(domain)
-
-                # Fetch the records
-                records = model.search_read(
-                    domain,
-                    fields=fields_to_read,
-                    limit=limit,
-                    offset=offset,
-                    order=order_string
-                )
-
-                # Add domain for each record - uniquement l'ID, sans le domaine d'entrée
-                for record in records:
-                    for key in record.keys():
-                        if isinstance(record[key], tuple):
-                            record[key] = record[key][1]
-                    record['odash.domain'] = [('id', '=', record['id'])]
-
-                return {
-                    'data': records,
-                    'metadata': {
-                        'page': offset // limit + 1 if limit else 1,
-                        'limit': limit,
-                        'total_count': total_count
-                    }
-                }
-
-            except Exception as e:
-                _logger.exception("Error in _process_table: %s", e)
-                return {'error': f'Error processing table: {str(e)}'}
+        except Exception as e:
+            _logger.exception("Error in _process_table: %s", e)
+            return {'error': f'Error processing table: {str(e)}'}
 
     def _process_sql_request(self, sql_request, viz_type, config):
         """Process a SQL request with security measures."""
