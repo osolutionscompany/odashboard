@@ -1018,7 +1018,7 @@ class OdashboardAPI(http.Controller):
                 fields=measure_fields,
                 groupby=groupby_fields,
                 orderby=order_string,
-                lazy=False
+                lazy=True
             )
 
             # Handle show_empty if needed
