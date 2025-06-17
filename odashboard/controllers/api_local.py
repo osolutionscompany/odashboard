@@ -60,45 +60,17 @@ class OdashboardAPI(http.Controller):
 
             # 2. Exclude technical models using NOT LIKE conditions
             technical_prefixes = ['ir.', 'base.', 'bus.', 'base_import.',
-                                  'web.', 'mail.', 'auth.', 'report.',
-                                  'resource.', 'wizard.']
+                                  'web.', 'auth.', 'report.', 'wizard.']
+
             for prefix in technical_prefixes:
                 domain.append(('model', 'not like', f'{prefix}%'))
 
             # Models starting with underscore
             domain.append(('model', 'not like', '\\_%'))
 
-            """
-            # TODO : Améliorer le filtrage des modèles
-                     # 3. Include only analytical models using OR conditions with LIKE
-            analytical_domain = ['|'] * (14 - 1)  # 13 patterns minus 1
-            analytical_domain += [
-                ('model', 'like', 'sale.%'),
-                ('model', 'like', 'account.%'),
-                ('model', 'like', 'crm.%'),
-                ('model', 'like', 'product.%'),
-                ('model', 'like', 'purchase.%'),
-                ('model', 'like', 'stock.%'),
-                ('model', 'like', 'project.%'),
-                ('model', 'like', 'hr.%'),
-                ('model', 'like', 'pos.%'),
-                ('model', 'like', 'mrp.%'),
-                ('model', 'like', 'website_sale.%'),
-                ('model', 'like', 'event.%'),
-                ('model', 'like', 'marketing.%'),
-                ('model', 'like', 'res.%'),
-            ]
-
-            # Combine all conditions
-            domain = domain + analytical_domain
-
-            """
-
             # Execute the optimized search
             model_obj = request.env['ir.model'].sudo()
             models = model_obj.search(domain)
-
-            _logger.info("Found %s analytical models", len(models))
 
             # Format the response with the already filtered models
             model_list = [{
@@ -146,62 +118,6 @@ class OdashboardAPI(http.Controller):
         except Exception as e:
             _logger.error("Error in API get_model_fields: %s", str(e))
             return self._build_response({'success': False, 'error': str(e)}, status=500)
-
-    def _get_fields_info(self, model):
-        """
-        Get information about all fields of an Odoo model.
-
-        :param model: Odoo model object
-        :return: List of field information
-        """
-        fields_info = []
-
-        # Get fields from the model
-        fields_data = model.fields_get()
-
-        # Fields to exclude
-        excluded_field_types = ['binary', 'one2many', 'many2many', 'text']  # Binary fields like images in base64
-        excluded_field_names = [
-            '__last_update',
-            'write_date', 'write_uid', 'create_uid',
-        ]
-
-        for field_name, field_data in fields_data.items():
-            field_type = field_data.get('type', 'unknown')
-
-            # Skip fields that match our exclusion criteria
-            if (field_type in excluded_field_types or field_name in excluded_field_names):
-                continue
-
-            # Check if it's a computed field that's not stored
-            field_obj = model._fields.get(field_name)
-            if field_obj and field_obj.compute and not field_obj.store:
-                _logger.debug("Skipping non-stored computed field: %s", field_name)
-                continue
-
-            # Create field info object for response
-            field_info = {
-                'field': field_name,
-                'name': field_data.get('string', field_name),
-                'type': field_type,
-                'label': field_data.get('string', field_name),
-                'value': field_name,
-                'search': f"{field_name} {field_data.get('string', field_name)}"
-            }
-
-            # Add selection options if field is a selection
-            if field_data.get('type') == 'selection' and 'selection' in field_data:
-                field_info['selection'] = [
-                    {'value': value, 'label': label}
-                    for value, label in field_data['selection']
-                ]
-
-            fields_info.append(field_info)
-
-        # Sort fields by name for better readability
-        fields_info.sort(key=lambda x: x['name'])
-
-        return fields_info
 
     @http.route('/api/get/dashboard', type='http', auth='none', csrf=False, methods=['POST'], cors='*')
     def get_dashboard_data(self):
@@ -283,73 +199,6 @@ class OdashboardAPI(http.Controller):
             _logger.exception("Unhandled error in get_dashboard_data:")
             return self._build_response({'error': str(e)}, 500)
 
-    def _build_response(self, data, status=200):
-        """Build a consistent JSON response with the given data and status."""
-        headers = {'Content-Type': 'application/json'}
-        return Response(json.dumps(data, cls=OdashboardJSONEncoder),
-                        status=status,
-                        headers=headers)
-
-    def _parse_date_from_string(self, date_str, return_range=False):
-        """Parse a date string in various formats and return a datetime object.
-        If return_range is True, return a tuple of start and end dates for period formats.
-        """
-        if not date_str:
-            return None
-
-        # Week pattern (e.g., W16 2025)
-        week_pattern = re.compile(r'W(\d{1,2})\s+(\d{4})')
-        week_match = week_pattern.match(date_str)
-        if week_match:
-            week_num = int(week_match.group(1))
-            year = int(week_match.group(2))
-            # Get the first day of the week
-            first_day = datetime.strptime(f'{year}-{week_num}-1', '%Y-%W-%w').date()
-            if return_range:
-                last_day = first_day + timedelta(days=6)
-                return first_day, last_day
-            return first_day
-
-        # Month pattern (e.g., January 2025 or 2025-01)
-        month_pattern = re.compile(r'(\w+)\s+(\d{4})|(\d{4})-(\d{2})')
-        month_match = month_pattern.match(date_str)
-        if month_match:
-            if month_match.group(1) and month_match.group(2):
-                # Format: January 2025
-                month_name = month_match.group(1)
-                year = int(month_match.group(2))
-                month_num = datetime.strptime(month_name, '%B').month
-            else:
-                # Format: 2025-01
-                year = int(month_match.group(3))
-                month_num = int(month_match.group(4))
-
-            if return_range:
-                first_day = date(year, month_num, 1)
-                last_day = date(year, month_num, calendar.monthrange(year, month_num)[1])
-                return first_day, last_day
-            return date(year, month_num, 1)
-
-        # Standard date format
-        try:
-            parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            if return_range:
-                return parsed_date, parsed_date
-            return parsed_date
-        except ValueError:
-            pass
-
-        # ISO format
-        try:
-            parsed_date = datetime.fromisoformat(date_str).date()
-            if return_range:
-                return parsed_date, parsed_date
-            return parsed_date
-        except ValueError:
-            pass
-
-        return None
-
     def _process_block(self, model, domain, config):
         """Process block type visualization."""
         block_options = config.get('block_options', {})
@@ -367,7 +216,7 @@ class OdashboardAPI(http.Controller):
                 'data': {
                     'value': count,
                     'label': label or 'Count',
-                    'odash.domain': []
+                    '__domain': []
                 }
             }
         else:
@@ -494,7 +343,7 @@ class OdashboardAPI(http.Controller):
                     'data': {
                         'value': value,
                         'label': label or f'{aggregation.capitalize()} of {field}',
-                        'odash.domain': []
+                        '__domain': []
                     }
                 }
             except Exception as e:
@@ -550,7 +399,6 @@ class OdashboardAPI(http.Controller):
                 data = {
                     'key': result[groupby_fields[0]][1] if isinstance(result[groupby_fields[0]], tuple) or isinstance(
                         result[groupby_fields[0]], list) else result[groupby_fields[0]],
-                    'odash.domain': result['__domain']
                 }
 
                 if len(groupby_fields) > 1:
@@ -582,6 +430,264 @@ class OdashboardAPI(http.Controller):
         except Exception as e:
             _logger.exception("Error in _process_graph: %s", e)
             return {'error': f'Error processing graph data: {str(e)}'}
+
+    def _process_table(self, model, domain, group_by_list, order_string, config):
+        """Process table type visualization."""
+        table_options = config.get('table_options', {})
+        columns = table_options.get('columns', [])
+        limit = table_options.get('limit', 50)
+        offset = table_options.get('offset', 0)
+
+        if not columns:
+            return {'error': 'Missing columns configuration for table'}
+
+        # Extract fields to read
+        fields_to_read = [col.get('field') for col in columns if col.get('field')]
+
+        # Simple table - use search_read
+        try:
+            # Count total records for pagination
+            total_count = model.search_count(domain)
+
+            if group_by_list:
+                table_options = config.get('table_options', {})
+                measures = table_options.get('columns', [])
+
+                if not measures:
+                    # Default to count measure if not specified
+                    measures = [{'field': 'id', 'aggregation': 'count'}]
+
+                measure_fields = []
+                for measure in measures:
+                    measure_fields.append(f"{measure.get('field')}:{measure.get('aggregation', 'sum')}")
+
+                # Prepare groupby fields for read_group
+                groupby_fields = []
+
+                for gb in group_by_list:
+                    field = gb.get('field')
+                    interval = gb.get('interval')
+                    if field:
+                        groupby_fields.append(f"{field}:{interval}" if interval else field)
+
+                results = model.read_group(
+                    domain,
+                    fields=measure_fields,
+                    groupby=groupby_fields,
+                    orderby=order_string,
+                    lazy=False
+                )
+
+                if 'show_empty' in group_by_list[0]:
+                    if ':' in groupby_fields[0]:
+                        results = self.complete_missing_date_intervals(results)
+                    else:
+                        results = self.complete_missing_selection_values(results, model, groupby_fields[0])
+
+                transformed_data = []
+                for result in results:
+                    data = {
+                        'key': result[groupby_fields[0]][1] if isinstance(result[groupby_fields[0]],
+                                                                          tuple) or isinstance(
+                            result[groupby_fields[0]], list) else result[groupby_fields[0]],
+                        '__domain': result['__domain']
+                    }
+
+                    for measure in measures:
+                        data[measure['field']] = result[measure['field']]
+
+                    transformed_data.append(data)
+            else:
+                transformed_data = model.search_read(
+                    domain,
+                    fields=fields_to_read,
+                    limit=limit,
+                    offset=offset,
+                    order=order_string
+                )
+
+                for data in transformed_data:
+                    for key in data.keys():
+                        if isinstance(data[key], tuple):
+                            data[key] = data[key][1]
+
+            return {
+                'data': transformed_data,
+                'metadata': {
+                    'page': offset // limit + 1 if limit else 1,
+                    'limit': limit,
+                    'total_count': total_count
+                }
+            }
+
+        except Exception as e:
+            _logger.exception("Error in _process_table: %s", e)
+            return {'error': f'Error processing table: {str(e)}'}
+
+    def _build_response(self, data, status=200):
+        """Build a consistent JSON response with the given data and status."""
+        headers = {'Content-Type': 'application/json'}
+        return Response(json.dumps(data, cls=OdashboardJSONEncoder),
+                        status=status,
+                        headers=headers)
+
+    def _process_sql_request(self, sql_request, viz_type, config):
+        """Process a SQL request with security measures."""
+        try:
+            request.env.cr.execute(sql_request)
+            results = request.env.cr.dictfetchall()
+
+            # Format data based on visualization type
+            if viz_type == 'graph':
+                if results and isinstance(results[0], dict) and 'key' not in results[0]:
+                    transformed_results = []
+                    for row in results:
+                        if isinstance(row, dict) and row:
+                            new_row = {}
+                            keys = list(row.keys())
+                            if keys:
+                                first_key = keys[0]
+                                new_row['key'] = row[first_key]
+
+                                for k in keys[1:]:
+                                    new_row[k] = row[k]
+
+                                transformed_results.append(new_row)
+                            else:
+                                transformed_results.append(row)
+                        else:
+                            transformed_results.append(row)
+                    return {'data': transformed_results}
+                else:
+                    return {'data': results}
+            elif viz_type == 'table':
+                return {'data': results}
+            elif viz_type == 'block':
+                results = results[0]
+                results["label"] = config.get('block_options').get('field')
+                return {'data': results}
+
+        except Exception as e:
+            _logger.error("SQL execution error: %s", e)
+            return {'error': f'SQL error: {str(e)}'}
+
+        return {'error': 'Unexpected error in SQL processing'}
+
+    def _get_fields_info(self, model):
+        """
+        Get information about all fields of an Odoo model.
+
+        :param model: Odoo model object
+        :return: List of field information
+        """
+        fields_info = []
+
+        # Get fields from the model
+        fields_data = model.fields_get()
+
+        # Fields to exclude
+        excluded_field_types = ['binary', 'one2many', 'many2many', 'text']  # Binary fields like images in base64
+        excluded_field_names = [
+            '__last_update',
+            'write_date', 'write_uid', 'create_uid',
+        ]
+
+        for field_name, field_data in fields_data.items():
+            field_type = field_data.get('type', 'unknown')
+
+            # Skip fields that match our exclusion criteria
+            if (field_type in excluded_field_types or field_name in excluded_field_names):
+                continue
+
+            # Check if it's a computed field that's not stored
+            field_obj = model._fields.get(field_name)
+            if field_obj and field_obj.compute and not field_obj.store:
+                _logger.debug("Skipping non-stored computed field: %s", field_name)
+                continue
+
+            # Create field info object for response
+            field_info = {
+                'field': field_name,
+                'name': field_data.get('string', field_name),
+                'type': field_type,
+                'label': field_data.get('string', field_name),
+                'value': field_name,
+                'search': f"{field_name} {field_data.get('string', field_name)}"
+            }
+
+            # Add selection options if field is a selection
+            if field_data.get('type') == 'selection' and 'selection' in field_data:
+                field_info['selection'] = [
+                    {'value': value, 'label': label}
+                    for value, label in field_data['selection']
+                ]
+
+            fields_info.append(field_info)
+
+        # Sort fields by name for better readability
+        fields_info.sort(key=lambda x: x['name'])
+
+        return fields_info
+
+    def _parse_date_from_string(self, date_str, return_range=False):
+        """Parse a date string in various formats and return a datetime object.
+        If return_range is True, return a tuple of start and end dates for period formats.
+        """
+        if not date_str:
+            return None
+
+        # Week pattern (e.g., W16 2025)
+        week_pattern = re.compile(r'W(\d{1,2})\s+(\d{4})')
+        week_match = week_pattern.match(date_str)
+        if week_match:
+            week_num = int(week_match.group(1))
+            year = int(week_match.group(2))
+            # Get the first day of the week
+            first_day = datetime.strptime(f'{year}-{week_num}-1', '%Y-%W-%w').date()
+            if return_range:
+                last_day = first_day + timedelta(days=6)
+                return first_day, last_day
+            return first_day
+
+        # Month pattern (e.g., January 2025 or 2025-01)
+        month_pattern = re.compile(r'(\w+)\s+(\d{4})|(\d{4})-(\d{2})')
+        month_match = month_pattern.match(date_str)
+        if month_match:
+            if month_match.group(1) and month_match.group(2):
+                # Format: January 2025
+                month_name = month_match.group(1)
+                year = int(month_match.group(2))
+                month_num = datetime.strptime(month_name, '%B').month
+            else:
+                # Format: 2025-01
+                year = int(month_match.group(3))
+                month_num = int(month_match.group(4))
+
+            if return_range:
+                first_day = date(year, month_num, 1)
+                last_day = date(year, month_num, calendar.monthrange(year, month_num)[1])
+                return first_day, last_day
+            return date(year, month_num, 1)
+
+        # Standard date format
+        try:
+            parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            if return_range:
+                return parsed_date, parsed_date
+            return parsed_date
+        except ValueError:
+            pass
+
+        # ISO format
+        try:
+            parsed_date = datetime.fromisoformat(date_str).date()
+            if return_range:
+                return parsed_date, parsed_date
+            return parsed_date
+        except ValueError:
+            pass
+
+        return None
 
     def complete_missing_selection_values(self, results, model, field_name):
         """
@@ -717,8 +823,12 @@ class OdashboardAPI(http.Controller):
             prev_result = complete_results[-1]
             curr_result = results[i]
 
-            prev_to = datetime.strptime(prev_result['__range'][range_field]['to'], '%Y-%m-%d %H:%M:%S')
-            curr_from = datetime.strptime(curr_result['__range'][range_field]['from'], '%Y-%m-%d %H:%M:%S')
+            try :
+                prev_to = datetime.strptime(prev_result['__range'][range_field]['to'], '%Y-%m-%d %H:%M:%S')
+                curr_from = datetime.strptime(curr_result['__range'][range_field]['from'], '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                prev_to = datetime.strptime(prev_result['__range'][range_field]['to'], '%Y-%m-%d')
+                curr_from = datetime.strptime(curr_result['__range'][range_field]['from'], '%Y-%m-%d')
 
             if prev_to < curr_from:
                 next_date = prev_to
@@ -726,10 +836,10 @@ class OdashboardAPI(http.Controller):
                 while next_date < curr_from:
                     if interval_type == 'day':
                         interval_end = next_date + timedelta(days=1)
-                        label = next_date.strftime('%Y-%m-%d')
+                        label = next_date.strftime("%d %b %Y")
                     elif interval_type == 'week':
                         interval_end = next_date + timedelta(weeks=1)
-                        label = f"W{next_date.isocalendar()[1]} {next_date.year}"
+                        label = f"W{interval_end.isocalendar()[1]} {interval_end.year}"
                     elif interval_type == 'month':
                         interval_end = next_date + relativedelta(months=1)
                         label = next_date.strftime('%B %Y')
@@ -775,89 +885,3 @@ class OdashboardAPI(http.Controller):
             complete_results.append(curr_result)
 
         return complete_results
-
-    def _process_table(self, model, domain, group_by_list, order_string, config):
-        """Process table type visualization."""
-        table_options = config.get('table_options', {})
-        columns = table_options.get('columns', [])
-        limit = table_options.get('limit', 50)
-        offset = table_options.get('offset', 0)
-
-        if not columns:
-            return {'error': 'Missing columns configuration for table'}
-
-        # Extract fields to read
-        fields_to_read = [col.get('field') for col in columns if col.get('field')]
-
-        # Simple table - use search_read
-        try:
-            # Count total records for pagination
-            total_count = model.search_count(domain)
-
-            results = model.search_read(
-                domain,
-                fields=fields_to_read,
-                limit=limit,
-                offset=offset,
-                order=order_string
-            )
-
-            for result in results:
-                for key in result.keys():
-                    if isinstance(result[key], tuple):
-                        result[key] = result[key][1]
-
-            return {
-                'data': results,
-                'metadata': {
-                    'page': offset // limit + 1 if limit else 1,
-                    'limit': limit,
-                    'total_count': total_count
-                }
-            }
-
-        except Exception as e:
-            _logger.exception("Error in _process_table: %s", e)
-            return {'error': f'Error processing table: {str(e)}'}
-
-    def _process_sql_request(self, sql_request, viz_type, config):
-        """Process a SQL request with security measures."""
-        try:
-            request.env.cr.execute(sql_request)
-            results = request.env.cr.dictfetchall()
-
-            # Format data based on visualization type
-            if viz_type == 'graph':
-                if results and isinstance(results[0], dict) and 'key' not in results[0]:
-                    transformed_results = []
-                    for row in results:
-                        if isinstance(row, dict) and row:
-                            new_row = {}
-                            keys = list(row.keys())
-                            if keys:
-                                first_key = keys[0]
-                                new_row['key'] = row[first_key]
-
-                                for k in keys[1:]:
-                                    new_row[k] = row[k]
-
-                                transformed_results.append(new_row)
-                            else:
-                                transformed_results.append(row)
-                        else:
-                            transformed_results.append(row)
-                    return {'data': transformed_results}
-                else:
-                    return {'data': results}
-            elif viz_type == 'table':
-                return {'data': results}
-            elif viz_type == 'block':
-                results = results[0]
-                results["label"] = config.get('block_options').get('field')
-                return {'data': results}
-
-        except Exception as e:
-            _logger.error("SQL execution error: %s", e)
-            return {'error': f'SQL error: {str(e)}'}
-
-        return {'error': 'Unexpected error in SQL processing'}
