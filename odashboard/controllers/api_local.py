@@ -418,7 +418,7 @@ class OdashboardAPI(http.Controller):
 
                     for sub_result in sub_results:
                         for measure in config['graph_options']['measures']:
-                            data[f"{measure['field']}|{sub_result[groupby_fields[1]]}"] = sub_result[measure['field']]
+                            data[f"{measure['field']}|{sub_result[groupby_fields[1]]}"] = {"value" : sub_result[measure['field']], "__domain" : sub_result["__domain"] }
                 else:
                     for measure in config['graph_options']['measures']:
                         data[measure['field']] = result[measure['field']]
