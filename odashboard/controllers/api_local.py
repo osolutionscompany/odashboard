@@ -119,6 +119,72 @@ class OdashboardAPI(http.Controller):
             _logger.error("Error in API get_model_fields: %s", str(e))
             return self._build_response({'success': False, 'error': str(e)}, status=500)
 
+    @http.route(['/api/get/model_records/<string:model_name>'], type='http', auth='none', csrf=False,
+                methods=['GET'], cors="*")
+    def get_model_records(self, model_name, **kw):
+        """
+        Retrieve all records of a specific model with pagination and search functionality.
+
+        :param model_name: Name of the Odoo model (example: 'res.partner')
+        :param page: Page number for pagination (default: 1)
+        :param search: Optional search string to filter records by name (default: '')
+        :return: JSON with the model records
+        """
+        try:
+            _logger.info("API call: Fetching records for model: %s", model_name)
+
+            # Check if the model exists
+            if model_name not in request.env:
+                return self._build_response({'success': False, 'error': f"Model '{model_name}' not found"}, status=404)
+
+            # Get pagination parameters
+            page = int(kw.get('page', 1))
+            limit = 50  # Number of records per page
+            offset = (page - 1) * limit
+
+            # Get search parameter
+            search_query = kw.get('search', '')
+
+            # Create domain for search
+            domain = []
+            if search_query:
+                domain.append(('name', 'ilike', search_query))
+
+            # Get model
+            model = request.env[model_name].sudo()
+
+            # Count total records matching the domain
+            total_records = model.search_count(domain)
+            total_pages = (total_records + limit - 1) // limit
+
+            # Search with pagination
+            records = model.search(domain, order="name asc", limit=limit, offset=offset)
+
+            # Format the records
+            record_list = []
+            for record in records:
+                record_data = {
+                    'id': record.id,
+                    'name': record.name,
+                }
+
+                # Include display_name if different from name
+                if record.display_name != record.name:
+                    record_data['display_name'] = record.display_name
+
+                # Get other basic fields if they exist
+                for field in ['active', 'code', 'ref']:
+                    if hasattr(record, field):
+                        record_data[field] = getattr(record, field)
+
+                record_list.append(record_data)
+
+            return self._build_response(record_list, 200)
+
+        except Exception as e:
+            _logger.error("Error in API get_model_records: %s", str(e))
+            return self._build_response({'success': False, 'error': str(e)}, status=500)
+
     @http.route('/api/get/dashboard', type='http', auth='none', csrf=False, methods=['POST'], cors='*')
     def get_dashboard_data(self):
         """Main endpoint to get dashboard visualization data.
