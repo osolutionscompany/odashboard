@@ -399,6 +399,7 @@ class OdashboardAPI(http.Controller):
                 data = {
                     'key': result[groupby_fields[0]][1] if isinstance(result[groupby_fields[0]], tuple) or isinstance(
                         result[groupby_fields[0]], list) else result[groupby_fields[0]],
+                    '__domain': result['__domain']
                 }
 
                 if len(groupby_fields) > 1:
@@ -507,6 +508,7 @@ class OdashboardAPI(http.Controller):
                 )
 
                 for data in transformed_data:
+                    data['__domain'] = []
                     for key in data.keys():
                         if isinstance(data[key], tuple):
                             data[key] = data[key][1]
