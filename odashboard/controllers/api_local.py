@@ -453,7 +453,7 @@ class OdashboardAPI(http.Controller):
                 lazy=True
             )
 
-            if 'show_empty' in group_by_list[0]:
+            if 'show_empty' in group_by_list[0] and group_by_list[0]['show_empty']:
                 if ':' in groupby_fields[0]:
                     results = self.complete_missing_date_intervals(results)
                 else:
@@ -545,7 +545,7 @@ class OdashboardAPI(http.Controller):
                     lazy=False
                 )
 
-                if 'show_empty' in group_by_list[0]:
+                if 'show_empty' in group_by_list[0] and group_by_list[0]['show_empty']:
                     if ':' in groupby_fields[0]:
                         results = self.complete_missing_date_intervals(results)
                     else:
