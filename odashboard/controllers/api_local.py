@@ -434,7 +434,7 @@ class OdashboardAPI(http.Controller):
 
         for gb in group_by_list:
             field = gb.get('field')
-            interval = gb.get('interval')
+            interval = gb.get('interval') if gb.get('interval') != 'auto' else 'month'
             if field:
                 groupby_fields.append(f"{field}:{interval}" if interval else field)
 
@@ -533,7 +533,7 @@ class OdashboardAPI(http.Controller):
 
                 for gb in group_by_list:
                     field = gb.get('field')
-                    interval = gb.get('interval')
+                    interval = gb.get('interval') if gb.get('interval') != 'auto' else 'month'
                     if field:
                         groupby_fields.append(f"{field}:{interval}" if interval else field)
 
