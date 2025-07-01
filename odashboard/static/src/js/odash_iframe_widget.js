@@ -39,7 +39,6 @@ export class OdashboardIframeWidget extends Component {
 
     // Process the message if it has the expected format
     if (message && typeof message === "object") {
-      console.log("Received message from iframe:", message);
 
       // Handle navigation request
       if (message.type === "navigate") {

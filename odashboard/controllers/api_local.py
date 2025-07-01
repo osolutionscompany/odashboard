@@ -185,6 +185,30 @@ class OdashboardAPI(http.Controller):
             _logger.error("Error in API get_model_records: %s", str(e))
             return self._build_response({'success': False, 'error': str(e)}, status=500)
 
+    @http.route(['/api/get/model_search/<string:model_name>'], type='http', auth='api_key_dashboard', csrf=False,
+                methods=['GET'], cors="*")
+    def get_model_search(self, model_name, **kw):
+        search = request.params.get('search', '')
+        page = int(kw.get('page', 1))
+        limit = 50
+
+        domain = []
+
+        if search:
+            domain.append(('name', 'ilike', search))
+
+        records = request.env[model_name].sudo().search(domain, limit=limit, offset=(page - 1) * limit)
+        record_list = []
+        for record in records:
+            record_list.append({
+                'id': record.id,
+                'name': record.name,
+            })
+
+        return self._build_response({
+            'results': record_list,
+        }, 200)
+
     @http.route('/api/get/dashboard', type='http', auth='none', csrf=False, methods=['POST'], cors='*')
     def get_dashboard_data(self):
         """Main endpoint to get dashboard visualization data.
@@ -682,6 +706,8 @@ class OdashboardAPI(http.Controller):
                 'value': field_name,
                 'search': f"{field_name} {field_data.get('string', field_name)}"
             }
+            if field_obj.comodel_name:
+                field_info['model'] = field_obj.comodel_name
 
             # Add selection options if field is a selection
             if field_data.get('type') == 'selection' and 'selection' in field_data:

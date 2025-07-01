@@ -55,6 +55,8 @@ class OdashConfigAPI(http.Controller):
                     'config_id': data.get('id'),
                     'config': data
                 })
+
+                request.env['odash.config'].clean_unused_config()
                 
                 return ApiHelper.json_valid_response(config.config, 201)
                 
@@ -106,6 +108,7 @@ class OdashConfigAPI(http.Controller):
             elif method == 'DELETE':
                 # Delete the configuration
                 config.sudo().unlink()
+                request.env['odash.config'].clean_unused_config()
                 
                 return ApiHelper.json_valid_response({"success": True}, 200)
                 
