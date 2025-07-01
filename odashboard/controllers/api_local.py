@@ -509,7 +509,8 @@ class OdashboardAPI(http.Controller):
 
                     for sub_result in sub_results:
                         for measure in config['graph_options']['measures']:
-                            data[f"{measure['field']}|{sub_result[groupby_fields[1]]}"] = {"value" : sub_result[measure['field']], "__domain" : sub_result["__domain"] }
+                            data_sub_key = sub_result[groupby_fields[1]][1] if isinstance(sub_result[groupby_fields[1]], tuple) or isinstance(sub_result[groupby_fields[1]], list) else sub_result[groupby_fields[1]]
+                            data[f"{measure['field']}|{data_sub_key}"] = {"value" : sub_result[measure['field']], "__domain" : sub_result["__domain"] }
                 else:
                     for measure in config['graph_options']['measures']:
                         data[measure['field']] = result[measure['field']]
@@ -677,19 +678,8 @@ class OdashboardAPI(http.Controller):
         # Get fields from the model
         fields_data = model.fields_get()
 
-        # Fields to exclude
-        excluded_field_types = ['binary', 'one2many', 'many2many', 'text']  # Binary fields like images in base64
-        excluded_field_names = [
-            '__last_update',
-            'write_date', 'write_uid', 'create_uid',
-        ]
-
         for field_name, field_data in fields_data.items():
             field_type = field_data.get('type', 'unknown')
-
-            # Skip fields that match our exclusion criteria
-            if (field_type in excluded_field_types or field_name in excluded_field_names):
-                continue
 
             # Check if it's a computed field that's not stored
             field_obj = model._fields.get(field_name)
