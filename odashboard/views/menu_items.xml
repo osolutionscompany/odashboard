@@ -1,6 +1,9 @@
 <odoo>
     <data>
-        <menuitem name="Dashboards" groups="base.group_user" id="menu_odash_dashboard_root" web_icon="odashboard,static/description/icon.png"/>
-        <menuitem name="Dashboard" id="menu_odash_dashboard_dashboard" parent="odashboard.menu_odash_dashboard_root" action="action_odash_dashboard" sequence="10"/>
+        <menuitem name="Odashboard"
+                  groups="odashboard.group_odashboard_viewer"
+                  id="menu_odash_dashboard_root"
+                  action="action_odash_dashboard"
+                  web_icon="odashboard,static/description/icon.png"/>
     </data>
 </odoo>
