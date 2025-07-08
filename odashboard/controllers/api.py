@@ -43,7 +43,7 @@ class OdashboardAPI(http.Controller):
 
         :return: JSON response with list of analytically relevant models
         """
-        engine = request.env['odash.engine'].sudo()
+        engine = request.env['odash.engine'].sudo()._get_single_record()
 
         # Use the engine to get the models
         result = engine.execute_engine_code('get_models', request.env)
@@ -119,7 +119,7 @@ class OdashboardAPI(http.Controller):
             results = engine.execute_engine_code('process_dashboard_request',
                                                  request_data, request.env)
 
-            return self._build_response(results, 200)
+            return self._build_response([results], 200)
 
     def _build_response(self, data, status=200):
         """Build a consistent JSON response with the given data and status."""
