@@ -710,66 +710,6 @@ class OdashboardAPI(http.Controller):
 
         return fields_info
 
-    def _parse_date_from_string(self, date_str, return_range=False):
-        """Parse a date string in various formats and return a datetime object.
-        If return_range is True, return a tuple of start and end dates for period formats.
-        """
-        if not date_str:
-            return None
-
-        # Week pattern (e.g., W16 2025)
-        week_pattern = re.compile(r'W(\d{1,2})\s+(\d{4})')
-        week_match = week_pattern.match(date_str)
-        if week_match:
-            week_num = int(week_match.group(1))
-            year = int(week_match.group(2))
-            # Get the first day of the week
-            first_day = datetime.strptime(f'{year}-{week_num}-1', '%Y-%W-%w').date()
-            if return_range:
-                last_day = first_day + timedelta(days=6)
-                return first_day, last_day
-            return first_day
-
-        # Month pattern (e.g., January 2025 or 2025-01)
-        month_pattern = re.compile(r'(\w+)\s+(\d{4})|(\d{4})-(\d{2})')
-        month_match = month_pattern.match(date_str)
-        if month_match:
-            if month_match.group(1) and month_match.group(2):
-                # Format: January 2025
-                month_name = month_match.group(1)
-                year = int(month_match.group(2))
-                month_num = datetime.strptime(month_name, '%B').month
-            else:
-                # Format: 2025-01
-                year = int(month_match.group(3))
-                month_num = int(month_match.group(4))
-
-            if return_range:
-                first_day = date(year, month_num, 1)
-                last_day = date(year, month_num, calendar.monthrange(year, month_num)[1])
-                return first_day, last_day
-            return date(year, month_num, 1)
-
-        # Standard date format
-        try:
-            parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            if return_range:
-                return parsed_date, parsed_date
-            return parsed_date
-        except ValueError:
-            pass
-
-        # ISO format
-        try:
-            parsed_date = datetime.fromisoformat(date_str).date()
-            if return_range:
-                return parsed_date, parsed_date
-            return parsed_date
-        except ValueError:
-            pass
-
-        return None
-
     def complete_missing_selection_values(self, results, model, field_name):
         """
         Fills in missing values in the results for fields of type selection or many2one
