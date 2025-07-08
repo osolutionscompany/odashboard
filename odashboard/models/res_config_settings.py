@@ -38,9 +38,16 @@ class ResConfigSettings(models.TransientModel):
         
     def action_check_engine_updates(self):
         """Check update for Odashboard engine"""
-        engine = self.env['odash.engine'].sudo()._get_single_record()
+        engine = self.env['odash.engine'].search([], limit=1)
+        if not engine:
+            engine = self.env['odash.engine'].create([{
+                'name': 'Dashboard Engine',
+                'version': '0.0.0',
+                'code': False,
+                'previous_code': False,
+            }])
         result = engine.check_for_updates()
-        
+
         if result:
             return {
                 'type': 'ir.actions.client',
