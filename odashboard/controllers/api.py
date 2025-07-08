@@ -43,7 +43,7 @@ class OdashboardAPI(http.Controller):
 
         :return: JSON response with list of analytically relevant models
         """
-        engine = request.env['odash.engine'].sudo()
+        engine = request.env['odash.engine'].sudo()._get_single_record()
 
         # Use the engine to get the models
         result = engine.execute_engine_code('get_models', request.env)
@@ -72,6 +72,32 @@ class OdashboardAPI(http.Controller):
 
         return self._build_response(result.get('data', {}), 200)
 
+    @http.route(['/api/get/model_records/<string:model_name>'], type='http', auth='none', csrf=False,
+                methods=['GET'], cors="*")
+    def get_model_records(self, model_name, **kw):
+        """
+        Retrieve information about the fields of a specific Odoo model.
+
+        :param model_name: Name of the Odoo model (example: 'sale.order')
+        :return: JSON with information about the model's fields
+        """
+        engine = request.env['odash.engine'].sudo()._get_single_record()
+
+        # Use the engine to get the model fields
+        result = engine.execute_engine_code('get_model_records', model_name, kw, request.env)
+
+        return self._build_response(result.get('data', {}), 200)
+
+    @http.route(['/api/get/model_search/<string:model_name>'], type='http', auth='api_key_dashboard', csrf=False,
+                methods=['GET'], cors="*")
+    def get_model_search(self, model_name, **kw):
+        engine = request.env['odash.engine'].sudo()._get_single_record()
+
+        # Use the engine to get the model fields
+        result = engine.execute_engine_code('get_model_search', model_name, kw, request)
+
+        return self._build_response(result.get('data', {}), 200)
+
     @http.route('/api/get/dashboard', type='http', auth='api_key_dashboard', csrf=False, methods=['POST'], cors='*')
     def get_dashboard_data(self):
         """
@@ -93,7 +119,7 @@ class OdashboardAPI(http.Controller):
             results = engine.execute_engine_code('process_dashboard_request',
                                                  request_data, request.env)
 
-            return self._build_response(results, 200)
+            return self._build_response([results], 200)
 
     def _build_response(self, data, status=200):
         """Build a consistent JSON response with the given data and status."""

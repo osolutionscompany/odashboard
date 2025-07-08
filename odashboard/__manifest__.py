@@ -14,6 +14,7 @@
     'data': [
         # Security
         'security/ir.model.access.csv',
+        'security/odash_security.xml',
 
         # Data
         'data/ir_config_parameter.xml',
