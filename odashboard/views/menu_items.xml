@@ -1,7 +1,7 @@
 <odoo>
     <data>
         <menuitem name="Odashboard"
-                  groups="odashboard.group_odashboard_viewer"
+                  groups="odashboard.group_odashboard_viewer,base.group_system"
                   id="menu_odash_dashboard_root"
                   action="action_odash_dashboard"
                   web_icon="odashboard,static/description/icon.png"/>
