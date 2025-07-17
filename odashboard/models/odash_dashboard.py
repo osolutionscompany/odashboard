@@ -17,6 +17,8 @@ class Dashboard(models.Model):
     _name = "odash.dashboard"
     _description = "Dashboard"
 
+    name = fields.Char(default='Odashboard')
+
     user_id = fields.Many2one("res.users", string="User")
 
     connection_url = fields.Char(string="URL")

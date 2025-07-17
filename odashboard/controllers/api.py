@@ -96,7 +96,7 @@ class OdashboardAPI(http.Controller):
         # Use the engine to get the model fields
         result = engine.execute_engine_code('get_model_search', model_name, kw, request)
 
-        return self._build_response(result.get('data', {}), 200)
+        return self._build_response({'results': result.get('data', {})}, 200)
 
     @http.route('/api/get/dashboard', type='http', auth='api_key_dashboard', csrf=False, methods=['POST'], cors='*')
     def get_dashboard_data(self):
