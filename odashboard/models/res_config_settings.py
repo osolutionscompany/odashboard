@@ -74,15 +74,13 @@ class ResConfigSettings(models.TransientModel):
     def synchronize_key(self):
         """Synchronize the key with the license server"""
 
-        self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', True)
-
         if not self.odashboard_key:
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
-                    'title': 'Error',
-                    'message': 'Please enter a key before synchronizing',
+                    'title': _('Error'),
+                    'message': _('Please enter a key before synchronizing'),
                     'type': 'danger',
                     'sticky': False,
                 }
@@ -112,8 +110,8 @@ class ResConfigSettings(models.TransientModel):
                             'type': 'ir.actions.client',
                             'tag': 'display_notification',
                             'params': {
-                                'title': 'Error',
-                                'message': 'Key already used.',
+                                'title': _('Error'),
+                                'message': _('Key already used.'),
                                 'type': 'danger',
                                 'sticky': False,
                             }
@@ -130,8 +128,8 @@ class ResConfigSettings(models.TransientModel):
                             'context': {'active_test': False},
                             'flags': {'form': {'action_buttons': True}},
                             'notification': {
-                                'title': 'Success',
-                                'message': 'Key successfully synchronized',
+                                'title': _('Success'),
+                                'message': _('Key successfully synchronized'),
                                 'type': 'success',
                                 'sticky': False,
                             }
@@ -141,8 +139,8 @@ class ResConfigSettings(models.TransientModel):
                         'type': 'ir.actions.client',
                         'tag': 'display_notification',
                         'params': {
-                            'title': 'Error',
-                            'message': result.get('error', 'Invalid key'),
+                            'title': _('Error'),
+                            'message': result.get('error', _('Invalid key')),
                             'type': 'danger',
                             'sticky': False,
                         }
@@ -152,8 +150,8 @@ class ResConfigSettings(models.TransientModel):
                     'type': 'ir.actions.client',
                     'tag': 'display_notification',
                     'params': {
-                        'title': 'Error',
-                        'message': 'Error verifying key',
+                        'title': _('Error'),
+                        'message': _('Error verifying key'),
                         'type': 'danger',
                         'sticky': False,
                     }
@@ -164,8 +162,8 @@ class ResConfigSettings(models.TransientModel):
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
-                    'title': 'Error',
-                    'message': 'Connection error when verifying license key',
+                    'title': _('Error'),
+                    'message': _('Connection error when verifying license key'),
                     'type': 'danger',
                     'sticky': False,
                 }
@@ -181,8 +179,8 @@ class ResConfigSettings(models.TransientModel):
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
-                    'title': 'Warning',
-                    'message': 'key is not synchronized',
+                    'title': _('Warning'),
+                    'message': _('key is not synchronized'),
                     'type': 'warning',
                     'sticky': False,
                 }
@@ -223,8 +221,8 @@ class ResConfigSettings(models.TransientModel):
                 'context': {'active_test': False},
                 'flags': {'form': {'action_buttons': True}},
                 'notification': {
-                    'title': 'Success',
-                    'message': 'key successfully desynchronized',
+                    'title': _('Success'),
+                    'message': _('key successfully desynchronized'),
                     'type': 'success',
                     'sticky': False,
                 }
@@ -249,8 +247,8 @@ class ResConfigSettings(models.TransientModel):
                 'context': {'active_test': False},
                 'flags': {'form': {'action_buttons': True}},
                 'notification': {
-                    'title': 'Warning',
-                    'message': 'Error during key desynchronization, desynchronized locally',
+                    'title': _('Warning'),
+                    'message': _('Error during key desynchronization, desynchronized locally'),
                     'type': 'warning',
                     'sticky': False,
                 }
