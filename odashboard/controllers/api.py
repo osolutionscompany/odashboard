@@ -46,6 +46,7 @@ class OdashboardAPI(http.Controller):
         engine = request.env['odash.engine'].sudo()._get_single_record()
 
         # Use the engine to get the models
+        # TODO : Ajouter         with request.env.cr.savepoint():
         result = engine.execute_engine_code('get_models', request.env)
 
         if result.get('success'):
@@ -68,6 +69,7 @@ class OdashboardAPI(http.Controller):
         engine = request.env['odash.engine'].sudo()._get_single_record()
 
         # Use the engine to get the model fields
+        # TODO : Ajouter         with request.env.cr.savepoint():
         result = engine.execute_engine_code('get_model_fields', model_name, request.env)
 
         return self._build_response(result.get('data', {}), 200)
@@ -81,6 +83,7 @@ class OdashboardAPI(http.Controller):
         :param model_name: Name of the Odoo model (example: 'sale.order')
         :return: JSON with information about the model's fields
         """
+        # TODO :     ajouter    with request.env.cr.savepoint():
         engine = request.env['odash.engine'].sudo()._get_single_record()
 
         # Use the engine to get the model fields
@@ -94,6 +97,7 @@ class OdashboardAPI(http.Controller):
         engine = request.env['odash.engine'].sudo()._get_single_record()
 
         # Use the engine to get the model fields
+        # TODO : ajouter with request.env.cr.savepoint():
         result = engine.execute_engine_code('get_model_search', model_name, kw, request)
 
         return self._build_response({'results': result.get('data', {})}, 200)

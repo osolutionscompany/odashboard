@@ -9,6 +9,7 @@ _logger = logging.getLogger(__name__)
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
+    odashboard_plan = fields.Char(string='Odashboard Plan', config_parameter="odashboard.plan")
     odashboard_key = fields.Char(string="Odashboard Key", config_parameter="odashboard.key")
     odashboard_key_synchronized = fields.Boolean(string="Key Synchronized",
                                                  config_parameter="odashboard.key_synchronized", readonly=True)
@@ -209,6 +210,7 @@ class ResConfigSettings(models.TransientModel):
             # Regardless of the server response, we desynchronize locally
             self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', False)
             self.env['ir.config_parameter'].sudo().set_param('odashboard.key', '')
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.plan', '')
 
             # Update the current record
             self.odashboard_key = ''

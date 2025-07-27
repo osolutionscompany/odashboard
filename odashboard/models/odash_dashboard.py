@@ -30,10 +30,11 @@ class Dashboard(models.Model):
         uuid_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
         key_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.key')
         api_endpoint = self.env['ir.config_parameter'].sudo().get_param('odashboard.api.endpoint')
-        token = requests.get(f"{api_endpoint}/api/odash/access/{uuid_param}/{key_param}")
-        if token.status_code == 200:
-            token = token.json()
-            self.env['ir.config_parameter'].sudo().set_param('odashboard.api.token', token)
+        data_raw = requests.get(f"{api_endpoint}/api/odash/access/{uuid_param}/{key_param}")
+        if data_raw.status_code == 200:
+            data = data_raw.json()
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.api.token', data['token'])
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.plan', data['plan'])
 
     def get_dashboard_for_user(self):
         user_id = self.env.user.id
