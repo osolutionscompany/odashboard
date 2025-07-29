@@ -31,7 +31,7 @@
             'odashboard/static/src/xml/odash_iframe_widget.xml'
         ],
     },
-    'application': False,
+    'application': True,
     'installable': True,
     'auto_install': False,
 }

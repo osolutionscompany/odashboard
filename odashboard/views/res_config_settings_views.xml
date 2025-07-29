@@ -56,9 +56,9 @@
                                                     type="object"
                                                     class="btn btn-secondary"
                                                     invisible="not odashboard_key_synchronized"/>
-                                            <div class="mt8"
+                                            <div class="mt8 text-success"
                                                  invisible="not odashboard_key_synchronized">
-                                                <span class="fa fa-check text-success"/>
+                                                <span class="fa fa-check"/>
                                                 key is synchronized
                                             </div>
                                             <field name="odashboard_key_synchronized"
@@ -83,7 +83,7 @@
                                         </div>
                                     </div>
                                     <div class="col-12 col-lg-6 o_setting_box"
-                                         id="odashboard_uuid">
+                                         id="odashboard_plan">
                                         <div class="o_setting_left_pane"/>
                                         <div class="o_setting_right_pane">
                                             <span class="o_form_label">
@@ -102,8 +102,8 @@
                                                   class="badge bg-success text-white rounded">
                                                 Pro
                                             </span>
-                                            <span invisible="odashboard_plan">
-                                                Key not synchronized.
+                                            <span invisible="odashboard_key_synchronized or odashboard_plan">
+                                                Key is not synchronized.
                                             </span>
                                         </div>
                                     </div>

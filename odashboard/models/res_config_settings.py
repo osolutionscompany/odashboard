@@ -5,6 +5,10 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+# Constants
+DEFAULT_API_ENDPOINT = 'https://odashboard.app'
+API_TIMEOUT = 10
+REQUEST_TIMEOUT = 30
 
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
@@ -14,7 +18,7 @@ class ResConfigSettings(models.TransientModel):
     odashboard_key_synchronized = fields.Boolean(string="Key Synchronized",
                                                  config_parameter="odashboard.key_synchronized", readonly=True)
     odashboard_uuid = fields.Char(string="Instance UUID", config_parameter="odashboard.uuid", readonly=True)
-    odashboard_engine_version = fields.Char(string="Version actuelle du moteur", readonly=True)
+    odashboard_engine_version = fields.Char(string="Current Engine Version", readonly=True)
 
     def set_values(self):
         super(ResConfigSettings, self).set_values()
@@ -92,7 +96,7 @@ class ResConfigSettings(models.TransientModel):
 
         # Get the license API endpoint from config parameters
         api_endpoint = self.env['ir.config_parameter'].sudo().get_param('odashboard.api.endpoint',
-                                                                        'https://odashboard.app')
+                                                                        DEFAULT_API_ENDPOINT)
 
         # Verify key with external platform
         try:
@@ -103,6 +107,7 @@ class ResConfigSettings(models.TransientModel):
                     'uuid': self.odashboard_uuid,
                     'url': self.env['ir.config_parameter'].sudo().get_param('web.base.url')
                 },
+                timeout=REQUEST_TIMEOUT
             )
 
             if response.status_code == 200:
@@ -123,13 +128,10 @@ class ResConfigSettings(models.TransientModel):
                     else:
                         self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', True)
                         self.env["odash.dashboard"].sudo().update_auth_token()
+                        
                         return {
-                            'type': 'ir.actions.act_window',
-                            'res_model': 'res.config.settings',
-                            'view_mode': 'form',
-                            'view_type': 'form',
-                            'target': 'inline',
-                            'context': {'active_test': False},
+                            'type': 'ir.actions.client',
+                            'tag': 'reload',
                         }
                 else:
                     return {
@@ -169,8 +171,8 @@ class ResConfigSettings(models.TransientModel):
     def desynchronize_key(self):
         """De-synchronize the key from the license server"""
         # Check if key is synchronized
-        is_synchronized = bool(self.env['ir.config_parameter'].sudo().get_param('odashboard.key_synchronized', 'False'))
-
+        config_model = self.env['ir.config_parameter'].sudo()
+        is_synchronized = bool(config_model.get_param('odashboard.key_synchronized', 'False'))
         if not is_synchronized:
             return {
                 'type': 'ir.actions.client',
@@ -183,12 +185,11 @@ class ResConfigSettings(models.TransientModel):
                 }
             }
 
-        key = self.env['ir.config_parameter'].sudo().get_param('odashboard.key')
-        uuid_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
+        key = config_model.get_param('odashboard.key')
+        uuid_param = config_model.get_param('odashboard.uuid')
 
         # Get the license API endpoint from config parameters
-        api_endpoint = self.env['ir.config_parameter'].sudo().get_param('odashboard.api.endpoint',
-                                                                        'https://odashboard.app')
+        api_endpoint = config_model.get_param('odashboard.api.endpoint', DEFAULT_API_ENDPOINT)
 
         # Notify the license server about desynchronization
         try:
@@ -198,41 +199,28 @@ class ResConfigSettings(models.TransientModel):
                     'key': key,
                     'uuid': uuid_param
                 },
-                timeout=10
+                timeout=API_TIMEOUT
             )
-
-            # Regardless of the server response, we desynchronize locally
-            self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', False)
-            self.env['ir.config_parameter'].sudo().set_param('odashboard.key', '')
-            self.env['ir.config_parameter'].sudo().set_param('odashboard.plan', '')
-
-            # Update the current record
-            self.odashboard_key = ''
-            self.odashboard_key_synchronized = False
-
-            return {
-                'type': 'ir.actions.act_window',
-                'res_model': 'res.config.settings',
-                'view_mode': 'form',
-                'view_type': 'form',
-                'target': 'inline',
-                'context': {'active_test': False},
-            }
+            self._clear_odashboard_data()
         except Exception as e:
             _logger.error("Error during key desynchronization: %s", str(e))
-            # Even if the server request fails, we desynchronize locally
-            self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', False)
-            self.env['ir.config_parameter'].sudo().set_param('odashboard.key', '')
+            self._clear_odashboard_data()
 
-            # Update the current record
-            self.odashboard_key = ''
-            self.odashboard_key_synchronized = False
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'reload',
+        }
 
-            return {
-                'type': 'ir.actions.act_window',
-                'res_model': 'res.config.settings',
-                'view_mode': 'form',
-                'view_type': 'form',
-                'target': 'inline',
-                'context': {'active_test': False},
-            }
+    def _clear_odashboard_data(self):
+        """Clear all odashboard-related configuration data"""
+        config_params = self.env['ir.config_parameter'].sudo()
+        config_params.set_param('odashboard.key_synchronized', False)
+        config_params.set_param('odashboard.key', '')
+        config_params.set_param('odashboard.plan', '')
+        config_params.set_param('odashboard.api.token', '')
+
+        # Update the current record
+        self.write({
+            'odashboard_key': '',
+            'odashboard_key_synchronized': False,
+        })
