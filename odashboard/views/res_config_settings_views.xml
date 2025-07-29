@@ -47,6 +47,7 @@
                                             </div>
                                             <button name="synchronize_key"
                                                     string="Synchronize key"
+                                                    noSaveDialog="true"
                                                     type="object"
                                                     class="btn btn-primary"
                                                     invisible="odashboard_key_synchronized"/>

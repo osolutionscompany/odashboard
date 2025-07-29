@@ -74,6 +74,9 @@ class ResConfigSettings(models.TransientModel):
 
     def synchronize_key(self):
         """Synchronize the key with the license server"""
+        
+        # Automatically save the configuration settings first
+        self.set_values()
 
         if not self.odashboard_key:
             return {
@@ -127,13 +130,6 @@ class ResConfigSettings(models.TransientModel):
                             'view_type': 'form',
                             'target': 'inline',
                             'context': {'active_test': False},
-                            'flags': {'form': {'action_buttons': True}},
-                            'notification': {
-                                'title': _('Success'),
-                                'message': _('Key successfully synchronized'),
-                                'type': 'success',
-                                'sticky': False,
-                            }
                         }
                 else:
                     return {
@@ -221,13 +217,6 @@ class ResConfigSettings(models.TransientModel):
                 'view_type': 'form',
                 'target': 'inline',
                 'context': {'active_test': False},
-                'flags': {'form': {'action_buttons': True}},
-                'notification': {
-                    'title': _('Success'),
-                    'message': _('key successfully desynchronized'),
-                    'type': 'success',
-                    'sticky': False,
-                }
             }
         except Exception as e:
             _logger.error("Error during key desynchronization: %s", str(e))
@@ -239,7 +228,6 @@ class ResConfigSettings(models.TransientModel):
             self.odashboard_key = ''
             self.odashboard_key_synchronized = False
 
-
             return {
                 'type': 'ir.actions.act_window',
                 'res_model': 'res.config.settings',
@@ -247,11 +235,4 @@ class ResConfigSettings(models.TransientModel):
                 'view_type': 'form',
                 'target': 'inline',
                 'context': {'active_test': False},
-                'flags': {'form': {'action_buttons': True}},
-                'notification': {
-                    'title': _('Warning'),
-                    'message': _('Error during key desynchronization, desynchronized locally'),
-                    'type': 'warning',
-                    'sticky': False,
-                }
             }
