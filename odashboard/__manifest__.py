@@ -31,6 +31,7 @@
             'odashboard/static/src/xml/odash_iframe_widget.xml'
         ],
     },
+    'license': 'Other proprietary',
     'application': True,
     'installable': True,
     'auto_install': False,
