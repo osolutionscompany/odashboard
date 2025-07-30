@@ -6,7 +6,7 @@ from odoo import fields, models, api
 class OdashConfig(models.Model):
     _name = 'odash.config'
     _description = 'Odashboard config'
-    _rec_name = 'config_id'
+    _rec_name = 'name'
 
     name = fields.Char(string='Name', compute='_compute_name', store=True)
     sequence = fields.Integer(string='Sequence', default=1)
@@ -18,7 +18,7 @@ class OdashConfig(models.Model):
     config = fields.Json(string='Config')
 
     security_group_ids = fields.Many2many('odash.security.group', string='Security Groups')
-    user_ids = fields.Many2many('res.users', string='Users')
+    user_ids = fields.Many2many('res.users', string='Users', domain=[('share', '=', False)])
 
     def clean_unused_config(self):
         pages = self.env['odash.config'].sudo().search([('is_page_config', '=', True)])
@@ -43,4 +43,3 @@ class OdashConfig(models.Model):
             else:
                 users_from_groups = record.security_group_ids.mapped('user_ids')
                 record.access_summary = f"Custom access: {len(record.security_group_ids)} groups ({len(users_from_groups)} distinct users), {len(record.user_ids)} directly assigned users"
-                

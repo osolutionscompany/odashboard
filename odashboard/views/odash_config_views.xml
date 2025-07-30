@@ -3,13 +3,14 @@
         <field name="name">odash.config.list</field>
         <field name="model">odash.config</field>
         <field name="arch" type="xml">
-            <list string="Configurations">
+            <list string="Configurations" create="0">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="access_summary"/>
             </list>
         </field>
     </record>
+
     <record id="view_odash_config_form" model="ir.ui.view">
         <field name="name">odash.config.form</field>
         <field name="model">odash.config</field>
@@ -32,6 +33,7 @@
             </form>
         </field>
     </record>
+
     <record id="action_odash_config" model="ir.actions.act_window">
         <field name="name">Pages</field>
         <field name="res_model">odash.config</field>

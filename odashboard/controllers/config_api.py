@@ -17,15 +17,15 @@ def check_access(config, user):
     
     if not config.security_group_ids and not config.user_ids:
         can_access = True
-    elif config.security_group_ids:
-        for group in config.security_group_ids:
-            if user in group.user_ids:
-                can_access = True
-                break
-    elif config.user_ids:
+    else:
         if user in config.user_ids:
             can_access = True
-    
+
+        if not can_access:
+            for group in config.security_group_ids:
+                if user in group.user_ids:
+                    can_access = True
+                    break
     return can_access
 
 
