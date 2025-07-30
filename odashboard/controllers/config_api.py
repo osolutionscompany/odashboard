@@ -1,15 +1,17 @@
-import json
 import uuid
 import logging
 from odoo import http
 from odoo.http import request
-import time
 
 from .api_helper import ApiHelper
 
 _logger = logging.getLogger(__name__)
 
 def check_access(config, user):
+
+    if user.has_group('odashboard.group_odashboard_admin'):
+        return True
+    
     can_access = False
 
     if not config.is_page_config:
