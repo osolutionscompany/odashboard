@@ -9,6 +9,26 @@ from .api_helper import ApiHelper
 
 _logger = logging.getLogger(__name__)
 
+def check_access(config, user):
+    can_access = False
+
+    if not config.is_page_config:
+        return True
+    
+    if not config.security_group_ids and not config.user_ids:
+        can_access = True
+    else:
+        if user in config.user_ids:
+            can_access = True
+
+        if not can_access:
+            for group in config.security_group_ids:
+                if user in group.user_ids:
+                    can_access = True
+                    break
+    return can_access
+
+
 class OdashConfigAPI(http.Controller):
     """
     Controller for CRUD operations on Odash Configuration.
@@ -32,11 +52,11 @@ class OdashConfigAPI(http.Controller):
         try:
             if method == 'GET':
                 # Get all page configurations
-                configs = request.env['odash.config'].sudo().search([('is_page_config', '=', True)])
+                configs = request.env['odash.config'].sudo().search([('is_page_config', '=', True)], order='sequence asc')
                 result = []
                 
                 for config in configs:
-                    if config.config:
+                    if config.config and check_access(config, request.env.user):
                         result.append(config.config)
                         
                 return ApiHelper.json_valid_response(result, 200)
@@ -83,7 +103,7 @@ class OdashConfigAPI(http.Controller):
                 ('config_id', '=', config_id)
             ], limit=1)
             
-            if not config:
+            if not config or not check_access(config, request.env.user):
                 return ApiHelper.json_error_response("Page configuration not found", 404)
             
             if method == 'GET':

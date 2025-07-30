@@ -5,5 +5,28 @@
                   id="menu_odash_dashboard_root"
                   action="action_odash_dashboard"
                   web_icon="odashboard,static/description/icon.png"/>
+
+        <menuitem name="Dashboards"
+                  groups="odashboard.group_odashboard_editor,base.group_system"
+                  id="menu_odash_dashboard_list"
+                  action="action_odash_dashboard"
+                  parent="menu_odash_dashboard_root"
+                  sequence="5"
+        />
+
+        <menuitem name="Security groups"
+                  groups="odashboard.group_odashboard_editor,base.group_system"
+                  id="menu_odash_security_root"
+                  action="action_odash_security"
+                  parent="menu_odash_dashboard_root"
+                  sequence="10"
+        />
+        <menuitem name="Pages"
+                  groups="odashboard.group_odashboard_editor,base.group_system"
+                  id="menu_odash_config_root"
+                  action="action_odash_config"
+                  parent="menu_odash_dashboard_root"
+                  sequence="20"
+        />
     </data>
 </odoo>

@@ -1,0 +1,43 @@
+<odoo>
+    <record id="view_odash_config_list" model="ir.ui.view">
+        <field name="name">odash.config.list</field>
+        <field name="model">odash.config</field>
+        <field name="arch" type="xml">
+            <list string="Configurations" create="0">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="access_summary"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_odash_config_form" model="ir.ui.view">
+        <field name="name">odash.config.form</field>
+        <field name="model">odash.config</field>
+        <field name="arch" type="xml">
+            <form string="Configuration">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="access_summary"/>
+                    </group>
+                    <notebook>
+                        <page name="Security groups">
+                            <field name="security_group_ids"/>
+                        </page>
+                        <page name="Users">
+                            <field name="user_ids"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_odash_config" model="ir.actions.act_window">
+        <field name="name">Pages</field>
+        <field name="res_model">odash.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('is_page_config', '=', True)]</field>
+    </record>
+</odoo>
