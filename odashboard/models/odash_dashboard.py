@@ -58,9 +58,11 @@ class Dashboard(models.Model):
         }
 
     def _refresh(self):
-        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        config_model = self.env['ir.config_parameter'].sudo()
+        base_url = config_model.get_param('web.base.url')
+        connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
         new_token = generate_random_string(64) if not self.token else self.token
-        new_connection_url = f"https://app.odashboard.app?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.env.user.id}"
+        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.env.user.id}"
         self.write({
             "token": new_token,
             "connection_url": new_connection_url,
