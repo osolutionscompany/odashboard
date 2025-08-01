@@ -9,7 +9,7 @@ _logger = logging.getLogger(__name__)
 
 def check_access(config, user):
 
-    if user.has_group('odashboard.group_odashboard_admin'):
+    if user.has_group('odashboard.group_odashboard_editor'):
         return True
     
     can_access = False

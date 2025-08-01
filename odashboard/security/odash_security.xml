@@ -19,9 +19,4 @@
                eval="[(4, ref('group_odashboard_viewer'))]"/>
     </record>
 
-    <record id="group_odashboard_admin" model="res.groups">
-        <field name="name">Admin</field>
-        <field name="category_id" ref="module_category_odashboard"/>
-        <field name="implied_ids" eval="[(4, ref('group_odashboard_editor'))]"/>
-    </record>
 </odoo>

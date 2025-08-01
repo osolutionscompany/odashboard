@@ -19,7 +19,7 @@ class Dashboard(models.Model):
 
     name = fields.Char(default='Odashboard')
 
-    user_id = fields.Many2one("res.users", string="User")
+    user_id = fields.Many2one("res.users", string="User", index=True)
 
     connection_url = fields.Char(string="URL")
     token = fields.Char(string="Token")
@@ -62,7 +62,7 @@ class Dashboard(models.Model):
         base_url = config_model.get_param('web.base.url')
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
         new_token = generate_random_string(64) if not self.token else self.token
-        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.env.user.id}|{'editor' if self.env.user.has_group('odashboard.group_odashboard_editor') or self.env.user.has_group('odashboard.group_odashboard_admin') else 'viewer'}"
+        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.env.user.id}|{'editor' if self.env.user.has_group('odashboard.group_odashboard_editor') else 'viewer'}"
         self.write({
             "token": new_token,
             "connection_url": new_connection_url,
