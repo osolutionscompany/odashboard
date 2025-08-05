@@ -23,6 +23,8 @@
         # Views
         'views/res_config_settings_views.xml',
         'views/dashboard_views.xml',
+        'views/odash_security_group_views.xml',
+        'views/odash_config_views.xml',
         'views/menu_items.xml',
     ],
     'assets': {
@@ -31,7 +33,8 @@
             'odashboard/static/src/xml/odash_iframe_widget.xml'
         ],
     },
-    'application': False,
+    'license': 'Other proprietary',
+    'application': True,
     'installable': True,
     'auto_install': False,
 }

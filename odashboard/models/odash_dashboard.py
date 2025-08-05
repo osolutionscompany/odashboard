@@ -17,7 +17,9 @@ class Dashboard(models.Model):
     _name = "odash.dashboard"
     _description = "Dashboard"
 
-    user_id = fields.Many2one("res.users", string="User")
+    name = fields.Char(default='Odashboard')
+
+    user_id = fields.Many2one("res.users", string="User", index=True)
 
     connection_url = fields.Char(string="URL")
     token = fields.Char(string="Token")
@@ -28,10 +30,11 @@ class Dashboard(models.Model):
         uuid_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
         key_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.key')
         api_endpoint = self.env['ir.config_parameter'].sudo().get_param('odashboard.api.endpoint')
-        token = requests.get(f"{api_endpoint}/api/odash/access/{uuid_param}/{key_param}")
-        if token.status_code == 200:
-            token = token.json()
-            self.env['ir.config_parameter'].sudo().set_param('odashboard.api.token', token)
+        data_raw = requests.get(f"{api_endpoint}/api/odash/access/{uuid_param}/{key_param}")
+        if data_raw.status_code == 200:
+            data = data_raw.json()
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.api.token', data['token'])
+            self.env['ir.config_parameter'].sudo().set_param('odashboard.plan', data['plan'])
 
     def get_dashboard_for_user(self):
         user_id = self.env.user.id
@@ -55,9 +58,11 @@ class Dashboard(models.Model):
         }
 
     def _refresh(self):
-        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        config_model = self.env['ir.config_parameter'].sudo()
+        base_url = config_model.get_param('web.base.url')
+        connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
         new_token = generate_random_string(64) if not self.token else self.token
-        new_connection_url = f"https://app.odashboard.app?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.env.user.id}"
+        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.env.user.id}|{'editor' if self.env.user.has_group('odashboard.group_odashboard_editor') else 'viewer'}"
         self.write({
             "token": new_token,
             "connection_url": new_connection_url,

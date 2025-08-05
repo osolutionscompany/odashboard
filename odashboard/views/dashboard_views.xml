@@ -18,4 +18,12 @@
         <field name="code">action = env['odash.dashboard'].get_dashboard_for_user()</field>
     </record>
 
+    <record id="action_odashboard_settings" model="ir.actions.act_window">
+        <field name="name">Odashboard Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+        <field name="context">{'module': 'odashboard'}</field>
+    </record>
+
 </odoo>

@@ -18,4 +18,5 @@
         <field name="implied_ids"
                eval="[(4, ref('group_odashboard_viewer'))]"/>
     </record>
+
 </odoo>
