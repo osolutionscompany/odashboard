@@ -25,6 +25,9 @@
         'views/dashboard_views.xml',
         'views/odash_security_group_views.xml',
         'views/odash_config_views.xml',
+        # Wizards
+        'wizards/odash_config_import_wizard_views.xml',
+        # Menu
         'views/menu_items.xml',
     ],
     'assets': {

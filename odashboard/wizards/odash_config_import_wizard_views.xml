@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_odash_config_import_wizard_form" model="ir.ui.view">
+        <field name="name">odash.config.import.wizard.form</field>
+        <field name="model">odash.config.import.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Import Dashboard Configurations">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>Import Dashboard Configurations</h1>
+                    </div>
+                    <group>
+                        <field name="import_file" filename="filename"/>
+                        <field name="filename" invisible="1"/>
+                        <field name="import_mode"/>
+                    </group>
+                    
+                    <group string="Import Mode Description">
+                        <div class="alert alert-info" role="alert">
+                            <strong>Replace All:</strong> Delete all existing configurations and import new ones.<br/>
+                            <strong>Merge:</strong> Update existing configurations and add new ones.<br/>
+                            <strong>Skip Existing:</strong> Only import configurations that don't already exist.
+                        </div>
+                    </group>
+                    
+                    <group string="Preview" invisible="not show_preview">
+                        <field name="show_preview" invisible="1"/>
+                        <field name="preview_data" widget="text" readonly="1" nolabel="1"/>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_import" string="Import" type="object" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>
