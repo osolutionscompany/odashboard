@@ -43,6 +43,8 @@ export class OdashboardIframeWidget extends Component {
       // Handle navigation request
       if (message.type === "navigate") {
         this.handleNavigation(message);
+      } else if (message.type === "refresh") {
+        window.location.reload()
       }
     }
   }
