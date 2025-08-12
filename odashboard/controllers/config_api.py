@@ -144,6 +144,33 @@ class OdashConfigAPI(http.Controller):
             _logger.error(f"Error {operation} page config: {e}")
             return ApiHelper.json_error_response(e, 500)
 
+    @http.route('/api/odash/pages/<string:config_id>/pdf', type='http', auth='api_key_dashboard',
+                methods=['GET'], csrf=False, cors="*")
+    def page_pdf(self, config_id, **kw):
+        method = request.httprequest.method
+
+        try:
+            # Get the configuration record first (common for all methods)
+            config = request.env['odash.config'].sudo().search([
+                ('is_page_config', '=', True),
+                ('config_id', '=', config_id)
+            ], limit=1)
+
+            if not config or not check_access(config, request.env.user):
+                return ApiHelper.json_error_response("Page configuration not found", 404)
+
+            if method == 'GET':
+                # Return the configuration
+                base_url = request.env['ir.config_parameter'].sudo().get_param('web.base.url')
+                return ApiHelper.json_valid_response({
+                    "url": f"{base_url}/dashboard/public/{config.id}/{config.secret_access_token}/pdf"
+                }, 200)
+
+        except Exception as e:
+            operation = "getting" if method == 'GET' else ("updating" if method == 'PUT' else "deleting")
+            _logger.error(f"Error {operation} page config: {e}")
+            return ApiHelper.json_error_response(e, 500)
+
     # ---- Data Configurations ----
 
     @http.route('/api/odash/data', type='http', auth='api_key_dashboard', methods=['GET', 'POST'], csrf=False, cors="*")
