@@ -84,6 +84,8 @@
                                     </div>
                                     <div class="col-12 col-lg-6 o_setting_box"
                                          id="odashboard_plan">
+                                        <field name="odashboard_key_synchronized" invisible="True"/>
+                                        <field name="odashboard_plan" invisible="True"/>
                                         <div class="o_setting_left_pane"/>
                                         <div class="o_setting_right_pane">
                                             <span class="o_form_label">

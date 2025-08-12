@@ -1,14 +1,14 @@
 <odoo>
-    <record id="view_odash_security_group_list" model="ir.ui.view">
-        <field name="name">odash.security.group.list</field>
+    <record id="view_odash_security_group_tree" model="ir.ui.view">
+        <field name="name">odash.security.group.tree</field>
         <field name="model">odash.security.group</field>
         <field name="arch" type="xml">
-            <list string="Security groups">
+            <tree string="Security groups">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="user_count"/>
                 <field name="description"/>
-            </list>
+            </tree>
         </field>
     </record>
 
@@ -35,6 +35,6 @@
     <record id="action_odash_security" model="ir.actions.act_window">
         <field name="name">Security groups</field>
         <field name="res_model">odash.security.group</field>
-        <field name="view_mode">list,form</field>
+        <field name="view_mode">tree,form</field>
     </record>
 </odoo>

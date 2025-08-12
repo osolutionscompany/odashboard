@@ -8,7 +8,7 @@
 
         <menuitem name="Dashboards"
                   groups="odashboard.group_odashboard_editor,base.group_system"
-                  id="menu_odash_dashboard_list"
+                  id="menu_odash_dashboard_tree"
                   action="action_odash_dashboard"
                   parent="menu_odash_dashboard_root"
                   sequence="5"
