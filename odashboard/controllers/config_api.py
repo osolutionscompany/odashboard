@@ -50,11 +50,16 @@ class OdashConfigAPI(http.Controller):
         """
 
         method = request.httprequest.method
-        
+        odash_config = request.env['odash.config'].sudo()
+        page_id = request.env.context.get('page_id')
+
         try:
             if method == 'GET':
                 # Get all page configurations
-                configs = request.env['odash.config'].sudo().search([('is_page_config', '=', True)], order='sequence asc')
+                if page_id:
+                    return ApiHelper.json_valid_response([page_id.config], 200)
+
+                configs = odash_config.sudo().search([('is_page_config', '=', True)], order='sequence asc')
                 result = []
                 
                 for config in configs:
@@ -72,13 +77,13 @@ class OdashConfigAPI(http.Controller):
                     data['id'] = str(uuid.uuid4())
                     
                 # Create new config record
-                config = request.env['odash.config'].sudo().create({
+                config = odash_config.sudo().create({
                     'is_page_config': True,
                     'config_id': data.get('id'),
                     'config': data
                 })
 
-                request.env['odash.config'].clean_unused_config()
+                odash_config.clean_unused_config()
                 
                 return ApiHelper.json_valid_response(config.config, 201)
                 

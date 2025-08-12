@@ -43,5 +43,29 @@
                   parent="menu_odash_configuration_root"
                   sequence="20"
         />
+
+        <menuitem name="Access"
+                  groups="odashboard.group_odashboard_editor,base.group_system"
+                  id="menu_odash_dashboard_accesses_root"
+                  action="action_odash_dashboard_accesses"
+                  parent="menu_odash_configuration_root"
+                  sequence="20"
+        />
+
+        <menuitem name="Export Configurations"
+                  groups="odashboard.group_odashboard_editor,base.group_system"
+                  id="menu_odash_export_config"
+                  action="action_export_odash_config"
+                  parent="menu_odash_configuration_root"
+                  sequence="30"
+        />
+
+        <menuitem name="Import Configurations"
+                  groups="odashboard.group_odashboard_editor,base.group_system"
+                  id="menu_odash_import_config"
+                  action="action_import_odash_config"
+                  parent="menu_odash_configuration_root"
+                  sequence="31"
+        />
     </data>
 </odoo>
