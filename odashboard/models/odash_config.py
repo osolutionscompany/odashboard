@@ -1,4 +1,6 @@
 import json
+import uuid
+
 from odoo import fields, models, api, _
 import base64
 from datetime import datetime
@@ -22,6 +24,12 @@ class OdashConfig(models.Model):
     security_group_ids = fields.Many2many('odash.security.group', string='Security Groups')
     user_ids = fields.Many2many('res.users', string='Users', domain=[('share', '=', False)])
 
+    access_token = fields.Char(string='Access token', default=lambda self: uuid.uuid4())
+    secret_access_token = fields.Char(string='Secret Access token', default=lambda self: uuid.uuid4())
+
+    allow_public_access = fields.Boolean(string='Allow public access')
+    public_url = fields.Char(string='Public URL', compute="_compute_public_url")
+
     def clean_unused_config(self):
         all_configs = self.env['odash.config'].sudo().search([])
         pages = all_configs.filtered(lambda c: c.is_page_config)
@@ -34,6 +42,12 @@ class OdashConfig(models.Model):
             if config.config_id not in total_pages:
                 unused_config += config
         unused_config.unlink()
+
+    @api.depends('access_token')
+    def _compute_public_url(self):
+        for record in self:
+            base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+            record.public_url = f"{base_url}/dashboard/public/{self.id}/{self.access_token}"
 
     @api.depends('config')
     def _compute_name(self):

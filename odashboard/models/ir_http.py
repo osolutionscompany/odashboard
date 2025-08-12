@@ -21,4 +21,4 @@ class IrHttp(models.AbstractModel):
         if not dashboard_id:
             raise Unauthorized("Invalid token")
 
-        request.update_env(user=dashboard_id.user_id)
+        request.update_env(user=dashboard_id.user_id, context=dict(request.context, page_id=dashboard_id.page_id))

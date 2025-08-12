@@ -19,7 +19,9 @@
                 <sheet>
                     <group>
                         <field name="name"/>
-                        <field name="access_summary"/>
+                        <field name="public_url" invisible="not allow_public_access" widget="CopyClipboardURL" />
+                        <field name="allow_public_access" widget="boolean_toggle" />
+                        <field name="access_summary" />
                     </group>
                     <notebook>
                         <page name="Security groups">
