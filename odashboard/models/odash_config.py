@@ -46,8 +46,8 @@ class OdashConfig(models.Model):
     @api.depends('access_token')
     def _compute_public_url(self):
         for record in self:
-            base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
-            record.public_url = f"{base_url}/dashboard/public/{self.id}/{self.access_token}"
+            base_url = record.env['ir.config_parameter'].sudo().get_param('web.base.url')
+            record.public_url = f"{base_url}/dashboard/public/{record.id}/{record.access_token}"
 
     @api.depends('config')
     def _compute_name(self):

@@ -7,6 +7,8 @@
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="access_summary"/>
+                <field name="allow_public_access" widget="boolean_toggle" />
+                <field name="public_url" widget="CopyClipboardURL" width="200px" />
             </list>
         </field>
     </record>
