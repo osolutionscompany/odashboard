@@ -25,10 +25,11 @@ class Main(http.Controller):
         public_user = request.env.ref('base.public_user')
         connection_url = request.env['odash.dashboard'].sudo().get_dashboard_for_user(public_user.id, page.id)
 
+        pdf_url = request.env['ir.config_parameter'].sudo().get_param('odashboard.pdf.url', 'https://pdf.odashboard.app')
         payload = {"url": f"{connection_url}&is_pdf=true"}
 
         try:
-            resp = requests.post("http://localhost:8002/render", json=payload, timeout=120)
+            resp = requests.post(f"{pdf_url}/render", json=payload, timeout=120)
         except requests.RequestException as e:
             return request.make_response(
                 '{"error":"PDF service unreachable","detail":"%s"}' % str(e).replace('"', '\\"'),
