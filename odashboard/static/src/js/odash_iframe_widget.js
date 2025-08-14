@@ -1,100 +1,105 @@
 /** @odoo-module **/
 
-import { registry } from "@web/core/registry";
-import { Component, onMounted, onWillUnmount } from "@odoo/owl";
-import { useService } from "@web/core/utils/hooks";
+import {registry} from "@web/core/registry";
+import {Component, onMounted, onWillUnmount} from "@odoo/owl";
+import {useService} from "@web/core/utils/hooks";
 
 export class OdashboardIframeWidget extends Component {
-  setup() {
-    // Retrieve the URL from the record's data to use as the iframe's src
-    this.iframeSrc = this.props.record.data.connection_url || "";
+    setup() {
+        // Retrieve the URL from the record's data to use as the iframe's src
+        this.companyService = useService("company");
+        const companyIds = this.companyService.activeCompanyIds;
 
-    // Get the necessary services for navigation
-    this.actionService = useService("action");
-    this.orm = useService("orm");
 
-    // Method to handle messages from iframe
-    this.handleMessage = this.handleMessage.bind(this);
+        // Tu peux maintenant construire l'URL finale avec les company_ids
+        const baseUrl = this.props.record.data.connection_url || "";
+        const companiesParam = `&company_ids=${companyIds.join(",")}`;
 
-    // Add event listener when component is mounted
-    onMounted(() => {
-      window.addEventListener("message", this.handleMessage, false);
-    });
+        this.iframeSrc = baseUrl + companiesParam;
 
-    // Remove event listener when component is unmounted
-    onWillUnmount(() => {
-      window.removeEventListener("message", this.handleMessage, false);
-    });
-  }
+        // Services
+        this.actionService = useService("action");
+        this.orm = useService("orm");
 
-  /**
-   * Handle messages received from the iframe
-   * @param {MessageEvent} event - The message event
-   */
-  handleMessage(event) {
-    // Basic security check to validate message origin if needed
-    // if (event.origin !== 'https://trusted-source.com') return;
-
-    const message = event.data;
-
-    // Process the message if it has the expected format
-    if (message && typeof message === "object") {
-
-      // Handle navigation request
-      if (message.type === "navigate") {
-        this.handleNavigation(message);
-      } else if (message.type === "refresh") {
-        window.location.reload()
-      } else if (message.type === "openUrl") {
-        window.open(message.url)
-      }
-    }
-  }
-
-  /**
-   * Handle navigation requests from iframe
-   * @param {Object} message - The navigation message
-   */
-  handleNavigation(message) {
-    if (!message.model) {
-      console.error("Navigation request missing model");
-      return;
+        // Event listeners
+        this.handleMessage = this.handleMessage.bind(this);
+        onMounted(() => {
+            window.addEventListener("message", this.handleMessage, false);
+        });
+        onWillUnmount(() => {
+            window.removeEventListener("message", this.handleMessage, false);
+        });
     }
 
-    // Default action is to open a list view
-    const action = {
-      type: "ir.actions.act_window",
-      res_model: message.model,
-      views: [
-        [false, "list"],
-        [false, "form"],
-      ],
-      target: message.target || "current",
-      name: message.name || message.model,
-    };
+    /**
+     * Handle messages received from the iframe
+     * @param {MessageEvent} event - The message event
+     */
+    handleMessage(event) {
+        // Basic security check to validate message origin if needed
+        // if (event.origin !== 'https://trusted-source.com') return;
 
-    // If domain is provided, add it to the action
-    if (message.domain) {
-      action.domain = message.domain;
+        const message = event.data;
+
+        // Process the message if it has the expected format
+        if (message && typeof message === "object") {
+
+            // Handle navigation request
+            if (message.type === "navigate") {
+                this.handleNavigation(message);
+            } else if (message.type === "refresh") {
+                window.location.reload()
+            } else if (message.type === "openUrl") {
+                window.open(message.url)
+            }
+        }
     }
 
-    // If record ID is provided, open form view instead
-    if (message.res_id) {
-      action.res_id = message.res_id;
-      action.views = [[false, "form"]];
-    }
+    /**
+     * Handle navigation requests from iframe
+     * @param {Object} message - The navigation message
+     */
+    handleNavigation(message) {
+        if (!message.model) {
+            console.error("Navigation request missing model");
+            return;
+        }
 
-    // Execute the action
-    this.actionService.doAction(action);
-  }
+        // Default action is to open a list view
+        const action = {
+            type: "ir.actions.act_window",
+            res_model: message.model,
+            views: [
+                [false, "list"],
+                [false, "form"],
+            ],
+            target: message.target || "current",
+            name: message.name || message.model,
+        };
+
+        // If domain is provided, add it to the action
+        if (message.domain) {
+            action.domain = message.domain;
+        }
+
+        // If record ID is provided, open form view instead
+        if (message.res_id) {
+            action.res_id = message.res_id;
+            action.views = [[false, "form"]];
+        }
+
+        // Execute the action
+        this.actionService.doAction(action);
+    }
 }
+
 OdashboardIframeWidget.template = "OdashboardIframeWidgetTemplate";
 
 export const OdashboardIframeWidgetDef = {
-  component: OdashboardIframeWidget,
+    component: OdashboardIframeWidget,
 };
 
 // Register the widget in the view_widgets registry
 registry
-  .category("view_widgets")
-  .add("odashboard_iframe_widget", OdashboardIframeWidgetDef);
+    .category("view_widgets")
+    .add("odashboard_iframe_widget", OdashboardIframeWidgetDef);

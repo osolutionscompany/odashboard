@@ -44,7 +44,7 @@ class OdashboardAPI(http.Controller):
             request.env["odash.dashboard"].sudo().update_auth_token()
         return ApiHelper.json_valid_response("ok", 200)
 
-    @http.route(['/api/get/models'], type='http', auth='none', csrf=False, methods=['GET'], cors="*")
+    @http.route(['/api/get/models'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
     def get_models(self, **kw):
         """
         Return a list of models relevant for analytics, automatically filtering out technical models
@@ -93,7 +93,7 @@ class OdashboardAPI(http.Controller):
             )
             return response
 
-    @http.route(['/api/get/model_fields/<string:model_name>'], type='http', auth='none', csrf=False,
+    @http.route(['/api/get/model_fields/<string:model_name>'], type='http', auth='api_key_dashboard', csrf=False,
                 methods=['GET'], cors="*")
     def get_model_fields(self, model_name, **kw):
         """
@@ -119,7 +119,7 @@ class OdashboardAPI(http.Controller):
             _logger.error("Error in API get_model_fields: %s", str(e))
             return self._build_response({'success': False, 'error': str(e)}, status=500)
 
-    @http.route(['/api/get/model_records/<string:model_name>'], type='http', auth='none', csrf=False,
+    @http.route(['/api/get/model_records/<string:model_name>'], type='http', auth='api_key_dashboard', csrf=False,
                 methods=['GET'], cors="*")
     def get_model_records(self, model_name, **kw):
         """
@@ -209,7 +209,7 @@ class OdashboardAPI(http.Controller):
             'results': record_list,
         }, 200)
 
-    @http.route('/api/get/dashboard', type='http', auth='none', csrf=False, methods=['POST'], cors='*')
+    @http.route('/api/get/dashboard', type='http', auth='api_key_dashboard', csrf=False, methods=['POST'], cors='*')
     def get_dashboard_data(self):
         """Main endpoint to get dashboard visualization data.
         Accepts JSON configurations for blocks, graphs, and tables.
@@ -263,6 +263,11 @@ class OdashboardAPI(http.Controller):
 
                     # Check if SQL request is provided
                     sql_request = data_source.get('sqlRequest')
+
+                    allowed_company_ids = request.context['dashboard_id'].allowed_company_ids
+
+                    if allowed_company_ids and model.fields_get().get('company_id'):
+                        domain.append(('company_id', 'in', allowed_company_ids.ids))
 
                     if sql_request:
                         """Exécute une requête SQL en annulant toute modification éventuelle."""
