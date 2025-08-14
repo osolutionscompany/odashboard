@@ -171,6 +171,50 @@ class OdashConfigAPI(http.Controller):
             _logger.error(f"Error {operation} page config: {e}")
             return ApiHelper.json_error_response(e, 500)
 
+    @http.route('/api/odash/pages/<string:config_id>/configure', type='http', auth='api_key_dashboard',
+                methods=['POST'], csrf=False, cors="*")
+    def page_configuration(self, config_id, **kw):
+        method = request.httprequest.method
+
+        try:
+            # Get the configuration record first (common for all methods)
+            config = request.env['odash.config'].sudo().search([
+                ('is_page_config', '=', True),
+                ('config_id', '=', config_id)
+            ], limit=1)
+            data = ApiHelper.load_json_data(request)
+            new_config = data.get('config', {}).get('config', {})
+            new_config["root"]["props"]["title"] = data.get("name")
+            new_config["title"] = data.get("name")
+            new_config["id"] = str(config.config["id"])
+
+            config.write({
+                'name': data.get("name"),
+                'config': new_config
+            })
+
+            configs = data.get('configs', [])
+            configs_to_create = []
+
+            for config in configs:
+                configs_to_create.append({
+                    'is_page_config': False,
+                    'config': config.get("config", {}),
+                    'config_id': config.get("config_id"),
+                    'name': config.get("name"),
+                })
+
+            request.env['odash.config'].sudo().create(configs_to_create)
+
+            return ApiHelper.json_valid_response("ok", 200)
+
+
+
+        except Exception as e:
+            operation = "getting" if method == 'GET' else ("updating" if method == 'PUT' else "deleting")
+            _logger.error(f"Error {operation} page config: {e}")
+            return ApiHelper.json_error_response(e, 500)
+
     # ---- Data Configurations ----
 
     @http.route('/api/odash/data', type='http', auth='api_key_dashboard', methods=['GET', 'POST'], csrf=False, cors="*")
