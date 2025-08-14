@@ -688,6 +688,8 @@ class OdashboardAPI(http.Controller):
 
             # Check if it's a computed field that's not stored
             field_obj = model._fields.get(field_name)
+            if field_obj and field_obj.compute and not field_obj.store:
+                continue
 
             # Create field info object for response
             field_info = {
@@ -698,7 +700,8 @@ class OdashboardAPI(http.Controller):
                 'value': field_name,
                 'search': f"{field_name} {field_data.get('string', field_name)}"
             }
-            if field_obj.comodel_name:
+
+            if field_obj and field_obj.comodel_name:
                 field_info['model'] = field_obj.comodel_name
 
             # Add selection options if field is a selection

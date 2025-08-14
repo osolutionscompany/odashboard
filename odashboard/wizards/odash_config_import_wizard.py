@@ -150,7 +150,7 @@ class OdashConfigImportWizard(models.TransientModel):
                     'message': message,
                     'type': 'success',
                     'sticky': False,
-                    'next': {'type': 'ir.actions.act_window_close'}
+                    'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'}
                 }
             }
 
