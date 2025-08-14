@@ -268,16 +268,21 @@ class OdashboardAPI(http.Controller):
                         """Exécute une requête SQL en annulant toute modification éventuelle."""
                         with request.env.cr.savepoint():
                             # This creates a savepoint, executes the code, and releases the savepoint
-                            results[config_id] = self._process_sql_request(sql_request, viz_type, config)
+                            result = self._process_sql_request(sql_request, viz_type, config)
                             # No need for explicit rollback, changes are isolated in the savepoint
                     elif viz_type == 'block':
-                        results[config_id] = self._process_block(model, domain, config)
+                        result = self._process_block(model, domain, config)
                     elif viz_type == 'graph':
-                        results[config_id] = self._process_graph(model, domain, group_by, order_string, config)
+                        result = self._process_graph(model, domain, group_by, order_string, config)
                     elif viz_type == 'table':
-                        results[config_id] = self._process_table(model, domain, group_by, order_string, config)
+                        result = self._process_table(model, domain, group_by, order_string, config)
                     else:
-                        results[config_id] = {'error': f'Unsupported visualization type: {viz_type}'}
+                        result = {'error': f'Unsupported visualization type: {viz_type}'}
+
+                    if data_source.get('preview'):
+                        result['data'] = result['data'][:50]
+
+                    results[config_id] = result
 
                 except Exception as e:
                     _logger.exception("Error processing visualization %s:", config_id)
