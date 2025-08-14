@@ -695,7 +695,8 @@ class OdashboardAPI(http.Controller):
                 'value': field_name,
                 'search': f"{field_name} {field_data.get('string', field_name)}"
             }
-            if field_obj.comodel_name:
+
+            if field_obj and field_obj.comodel_name:
                 field_info['model'] = field_obj.comodel_name
 
             # Add selection options if field is a selection
