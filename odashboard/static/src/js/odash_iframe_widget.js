@@ -10,8 +10,7 @@ export class OdashboardIframeWidget extends Component {
         this.companyService = useService("company");
         const companyIds = this.companyService.activeCompanyIds;
 
-
-        // Tu peux maintenant construire l'URL finale avec les company_ids
+        // Build the iframe URL with the company_ids parameter
         const baseUrl = this.props.record.data.connection_url || "";
         const companiesParam = `&company_ids=${companyIds.join(",")}`;
 
@@ -21,14 +20,36 @@ export class OdashboardIframeWidget extends Component {
         this.actionService = useService("action");
         this.orm = useService("orm");
 
-        // Event listeners
+        // Method to handle messages from iframe
         this.handleMessage = this.handleMessage.bind(this);
+
+        // Add event listener when component is mounted
         onMounted(() => {
             window.addEventListener("message", this.handleMessage, false);
+            this.adjustIframePosition();
         });
+
+        // Remove event listener when component is unmounted
         onWillUnmount(() => {
             window.removeEventListener("message", this.handleMessage, false);
         });
+    }
+
+    /**
+     * Adjust iframe position based on neutralize banner presence
+     */
+    adjustIframePosition() {
+        // Check if specific neutralize banner element is present
+        const neutralizeBanner = document.querySelector('span#oe_neutralize_banner');
+        const body = document.body;
+
+        if (neutralizeBanner) {
+            // Add class to body to indicate banner is active (for fallback browsers)
+            body.classList.add('o_neutralize_banner_active');
+        } else {
+            // Remove class if banner is not present
+            body.classList.remove('o_neutralize_banner_active');
+        }
     }
 
     /**
