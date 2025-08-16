@@ -68,6 +68,20 @@ class Dashboard(models.Model):
             'target': 'current',
         }
 
+    def ask_refresh(self, companies_ids):
+        config_model = self.env['ir.config_parameter'].sudo()
+        base_url = config_model.get_param('web.base.url')
+        connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
+        new_token = generate_random_string(64) if not self.token else self.token
+
+        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.user_id.id}|{'editor' if self.user_id.has_group('odashboard.group_odashboard_editor') else 'viewer'}|{','.join(str(id) for id in companies_ids)}"
+        self.write({
+            "token": new_token,
+            "connection_url": new_connection_url,
+            "last_authentication_date": datetime.now(),
+            "allowed_company_ids": [(6, 0, companies_ids)]
+        })
+
     def _refresh(self, is_public=False):
         config_model = self.env['ir.config_parameter'].sudo()
         base_url = config_model.get_param('web.base.url')
