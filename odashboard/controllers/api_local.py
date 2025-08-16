@@ -267,7 +267,9 @@ class OdashboardAPI(http.Controller):
                     allowed_company_ids = request.context['dashboard_id'].allowed_company_ids
 
                     if allowed_company_ids and model.fields_get().get('company_id'):
-                        domain.append(('company_id', 'in', allowed_company_ids.ids))
+                        ids = allowed_company_ids.ids
+                        ids.append(False)
+                        domain.append(('company_id', 'in', ids))
 
                     if sql_request:
                         """Exécute une requête SQL en annulant toute modification éventuelle."""

@@ -71,7 +71,11 @@ export class OdashboardIframeWidget extends Component {
             } else if (message.type === "refresh") {
                 window.location.reload()
             } else if (message.type === "openUrl") {
-                window.open(message.url)
+                if (message.target === "_self") {
+                    window.location.href = message.url
+                } else {
+                    window.open(message.url)
+                }
             }
         }
     }
