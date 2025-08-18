@@ -2,6 +2,7 @@ from odoo import http
 from odoo.http import request
 from werkzeug.exceptions import NotFound
 import requests
+from .api_helper import ApiHelper
 
 
 class Main(http.Controller):
@@ -50,3 +51,11 @@ class Main(http.Controller):
                 ('Content-Disposition', f'inline; filename="odashboard.pdf"'),
             ],
         )
+
+    @http.route(["/api/odash/refresh-dashboard"], type='http', auth='api_key_dashboard', csrf=False, methods=['post'],
+                cors="*")
+    def refresh_dashboard(self, **kw):
+        dashboard_id = request.env.context.get('dashboard_id')
+        data = ApiHelper.load_json_data(request)
+        dashboard_id.ask_refresh(data.get("company_ids"))
+        return ApiHelper.json_valid_response("ok", 200)
