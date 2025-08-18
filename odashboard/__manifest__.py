@@ -34,6 +34,7 @@
     ],
     'assets': {
         'web.assets_backend': [
+            'odashboard/static/src/css/odash_iframe_widget.css',
             'odashboard/static/src/js/odash_iframe_widget.js',
             'odashboard/static/src/xml/odash_iframe_widget.xml'
         ],
