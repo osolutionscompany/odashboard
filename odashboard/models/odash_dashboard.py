@@ -42,9 +42,8 @@ class Dashboard(models.Model):
             self.env['ir.config_parameter'].sudo().set_param('odashboard.api.token', data['token'])
             self.env['ir.config_parameter'].sudo().set_param('odashboard.plan', data['plan'])
 
-    def get_dashboard_for_user(self, user_id=False, page_id=False):
-        if not user_id:
-            user_id = self.env.user.id
+    def get_public_dashboard(self, page_id=False):
+        user_id = self.env.ref('base.public_user').id
         dashboard_id = self.search([('user_id', '=', user_id), ('page_id', '=', page_id)], limit=1)
 
         if not dashboard_id:
@@ -53,10 +52,32 @@ class Dashboard(models.Model):
                 'page_id': page_id,
             })
 
-        dashboard_id._refresh(page_id is not False)
+        config_model = self.env['ir.config_parameter'].sudo()
+        base_url = config_model.get_param('web.base.url')
+        connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
+        new_token = generate_random_string(64) if not dashboard_id.token else dashboard_id.token
+        companies_ids = self.env['res.company'].search([])
 
-        if page_id:
-            return dashboard_id.connection_url
+        new_connection_url = f"{connection_url}/public?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|0|0|viewer|{','.join(str(id) for id in companies_ids.ids)}"
+
+        dashboard_id.write({
+            "token": new_token,
+            "connection_url": new_connection_url,
+            "last_authentication_date": datetime.now(),
+            "allowed_company_ids": [(6, 0, companies_ids.ids)]
+        })
+        return new_connection_url
+
+    def get_dashboard_for_user(self):
+        user_id = self.env.user.id
+        dashboard_id = self.search([('user_id', '=', user_id)], limit=1)
+
+        if not dashboard_id:
+            dashboard_id = self.create({
+                'user_id': user_id
+            })
+
+        dashboard_id._refresh()
 
         return {
             'type': 'ir.actions.act_window',
@@ -74,7 +95,7 @@ class Dashboard(models.Model):
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
         new_token = generate_random_string(64) if not self.token else self.token
 
-        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.user_id.id}|{'editor' if self.user_id.has_group('odashboard.group_odashboard_editor') else 'viewer'}|{','.join(str(id) for id in companies_ids)}"
+        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.user_id.id}|{self.env.user.partner_id.id}|{'editor' if self.user_id.has_group('odashboard.group_odashboard_editor') else 'viewer'}|{','.join(str(id) for id in companies_ids)}"
         self.write({
             "token": new_token,
             "connection_url": new_connection_url,
@@ -82,15 +103,13 @@ class Dashboard(models.Model):
             "allowed_company_ids": [(6, 0, companies_ids)]
         })
 
-    def _refresh(self, is_public=False):
+    def _refresh(self):
         config_model = self.env['ir.config_parameter'].sudo()
         base_url = config_model.get_param('web.base.url')
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
-        if is_public:
-            connection_url += "/public"
         new_token = generate_random_string(64) if not self.token else self.token
 
-        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.env.user.id}|{'editor' if self.env.user.has_group('odashboard.group_odashboard_editor') else 'viewer'}|{','.join(str(id) for id in self.env.companies.ids)}"
+        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.env.user.id}|{self.env.user.partner_id.id}|{'editor' if self.env.user.has_group('odashboard.group_odashboard_editor') else 'viewer'}|{','.join(str(id) for id in self.env.companies.ids)}"
         self.write({
             "token": new_token,
             "connection_url": new_connection_url,

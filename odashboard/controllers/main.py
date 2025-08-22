@@ -12,8 +12,7 @@ class Main(http.Controller):
         page = request.env['odash.config'].sudo().search([('is_page_config', '=', True), ('id', '=', page_id)], limit=1)
         if not page or page.access_token != access_token or not page.allow_public_access:
             raise NotFound()
-        public_user = request.env.ref('base.public_user')
-        connection_url = request.env['odash.dashboard'].sudo().get_dashboard_for_user(public_user.id, page.id)
+        connection_url = request.env['odash.dashboard'].sudo().get_public_dashboard(page.id)
         return request.render('odashboard.dashboard_public_view', {
             'connection_url': connection_url,
         })
@@ -23,8 +22,7 @@ class Main(http.Controller):
         page = request.env['odash.config'].sudo().search([('is_page_config', '=', True), ('id', '=', page_id)], limit=1)
         if not page or page.secret_access_token != access_token:
             raise NotFound()
-        public_user = request.env.ref('base.public_user')
-        connection_url = request.env['odash.dashboard'].sudo().get_dashboard_for_user(public_user.id, page.id)
+        connection_url = request.env['odash.dashboard'].sudo().get_public_dashboard(page.id)
 
         pdf_url = request.env['ir.config_parameter'].sudo().get_param('odashboard.pdf.url', 'https://pdf.odashboard.app')
         payload = {"url": f"{connection_url}&is_pdf=true"}
