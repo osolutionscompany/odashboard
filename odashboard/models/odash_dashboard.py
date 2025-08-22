@@ -109,7 +109,7 @@ class Dashboard(models.Model):
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
         new_token = generate_random_string(64) if not self.token else self.token
 
-        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.env.user.id}|{self.env.user.partner_id.id}|{'editor' if self.env.user.has_group('odashboard.group_odashboard_editor') else 'viewer'}|{','.join(str(id) for id in self.env.companies.ids)}"
+        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.user_id.id}|{self.user_id.partner_id.id}|{'editor' if self.env.user.has_group('odashboard.group_odashboard_editor') else 'viewer'}|{','.join(str(id) for id in self.env.companies.ids)}"
         self.write({
             "token": new_token,
             "connection_url": new_connection_url,
