@@ -51,6 +51,13 @@
                                                     type="object"
                                                     class="btn btn-primary"
                                                     invisible="odashboard_key_synchronized"/>
+                                            <span class="mx-3" invisible="odashboard_key_synchronized">or</span>
+                                            <button name="set_demo_key"
+                                                    string="Use a demo key"
+                                                    noSaveDialog="true"
+                                                    type="object"
+                                                    class="btn btn-outline-secondary"
+                                                    invisible="odashboard_key_synchronized"/>
                                             <button name="desynchronize_key"
                                                     string="Desynchronize key"
                                                     type="object"

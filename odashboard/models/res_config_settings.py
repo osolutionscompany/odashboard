@@ -1,7 +1,9 @@
-from odoo import models, fields, api, _
 import requests
 import uuid
 import logging
+
+from odoo import models, fields, api, _
+from ..hooks import post_init_hook
 
 _logger = logging.getLogger(__name__)
 
@@ -190,6 +192,7 @@ class ResConfigSettings(models.TransientModel):
 
         # Get the license API endpoint from config parameters
         api_endpoint = config_model.get_param('odashboard.api.endpoint', DEFAULT_API_ENDPOINT)
+        api_endpoint = 'localhost:8079'
 
         # Notify the license server about desynchronization
         try:
@@ -210,6 +213,12 @@ class ResConfigSettings(models.TransientModel):
             'type': 'ir.actions.client',
             'tag': 'reload',
         }
+
+    def set_demo_key(self):
+        """
+        Call the post_init_hook to create and sync a demo key
+        """
+        post_init_hook(self.env)
 
     def _clear_odashboard_data(self):
         """Clear all odashboard-related configuration data"""
