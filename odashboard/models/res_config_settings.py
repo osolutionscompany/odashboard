@@ -192,7 +192,6 @@ class ResConfigSettings(models.TransientModel):
 
         # Get the license API endpoint from config parameters
         api_endpoint = config_model.get_param('odashboard.api.endpoint', DEFAULT_API_ENDPOINT)
-        api_endpoint = 'localhost:8079'
 
         # Notify the license server about desynchronization
         try:
@@ -233,3 +232,17 @@ class ResConfigSettings(models.TransientModel):
             'odashboard_key': '',
             'odashboard_key_synchronized': False,
         })
+
+    def action_manage_plan(self):
+        """Open the O'Dashboard billing/plan management page in a new tab."""
+        config = self.env['ir.config_parameter'].sudo()
+        base = config.get_param('odashboard.api.endpoint', DEFAULT_API_ENDPOINT)
+
+        # Use a stable path on the portal for plan management
+        url = f"{base.rstrip('/')}/account/plan"
+
+        return {
+            'type': 'ir.actions.act_url',
+            'url': url,
+            'target': 'new',
+        }
