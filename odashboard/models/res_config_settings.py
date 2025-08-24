@@ -239,7 +239,6 @@ class ResConfigSettings(models.TransientModel):
         """Open the O'Dashboard billing/plan management page in a new tab."""
         config = self.env['ir.config_parameter'].sudo()
         base = config.get_param('odashboard.api.endpoint', DEFAULT_API_ENDPOINT)
-        base = 'http://localhost:8079'
         key = config.get_param('odashboard.key')
 
         # Use a stable path on the portal for plan management
