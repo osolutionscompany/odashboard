@@ -1,7 +1,11 @@
-from odoo import models, fields, api, _
 import requests
 import uuid
 import logging
+from werkzeug.urls import url_encode
+
+
+from odoo import models, fields, api, _
+from ..hooks import post_init_hook
 
 _logger = logging.getLogger(__name__)
 
@@ -211,6 +215,12 @@ class ResConfigSettings(models.TransientModel):
             'tag': 'reload',
         }
 
+    def set_demo_key(self):
+        """
+        Call the post_init_hook to create and sync a demo key
+        """
+        post_init_hook(self.env)
+
     def _clear_odashboard_data(self):
         """Clear all odashboard-related configuration data"""
         config_params = self.env['ir.config_parameter'].sudo()
@@ -224,3 +234,19 @@ class ResConfigSettings(models.TransientModel):
             'odashboard_key': '',
             'odashboard_key_synchronized': False,
         })
+
+    def action_manage_plan(self):
+        """Open the O'Dashboard billing/plan management page in a new tab."""
+        config = self.env['ir.config_parameter'].sudo()
+        base = config.get_param('odashboard.api.endpoint', DEFAULT_API_ENDPOINT)
+        key = config.get_param('odashboard.key')
+
+        # Use a stable path on the portal for plan management
+        url = f"{base.rstrip('/')}/odash/manage-plan?key={key}"
+
+        # Redirect to the URL (open in a new tab)
+        return {
+            'type': 'ir.actions.act_url',
+            'url': url,
+            'target': 'new',
+        }

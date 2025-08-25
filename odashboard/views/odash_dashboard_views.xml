@@ -6,6 +6,7 @@
             <list string="Accesses" create="0">
                 <field name="user_id" />
                 <field name="page_id" />
+                <field name="allowed_company_ids" widget="many2many_tags" />
                 <field name="last_authentication_date"/>
             </list>
         </field>
