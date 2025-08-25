@@ -18,10 +18,18 @@
                         <div id="odashboard_key">
                             <block title="License"
                                    name="odashboard_key_container">
+                                <div class="d-flex justify-content-end">
+                                    <button name="action_manage_plan"
+                                            string="Manage my plan"
+                                            type="object"
+                                            icon="fa-bullseye"
+                                            class="btn btn-link"
+                                            invisible="not odashboard_key_synchronized"/>
+                                </div>
                                 <div class="row mt16 o_settings_container"
                                      id="odashboard_settings">
                                     <div class="col-12 col-lg-6 o_setting_box"
-                                         id="odashboard_key">
+                                         id="odashboard_key_settings">
                                         <div class="o_setting_left_pane"/>
                                         <div class="o_setting_right_pane">
                                             <span class="o_form_label">key
@@ -50,6 +58,13 @@
                                                     noSaveDialog="true"
                                                     type="object"
                                                     class="btn btn-primary"
+                                                    invisible="odashboard_key_synchronized"/>
+                                            <span class="mx-3" invisible="odashboard_key_synchronized">or</span>
+                                            <button name="set_demo_key"
+                                                    string="Use a demo key"
+                                                    noSaveDialog="true"
+                                                    type="object"
+                                                    class="btn btn-outline-secondary"
                                                     invisible="odashboard_key_synchronized"/>
                                             <button name="desynchronize_key"
                                                     string="Desynchronize key"
@@ -95,12 +110,12 @@
                                                 Your odashboard plan
                                             </div>
                                             <span invisible="odashboard_plan != 'freemium'"
-                                                   readonly="1"
+                                                  readonly="1"
                                                   class="badge bg-black text-white rounded">
                                                 Freemium
                                             </span>
                                             <span invisible="odashboard_plan not in ['pro', 'partner']"
-                                                   readonly="1"
+                                                  readonly="1"
                                                   class="badge bg-success text-white rounded">
                                                 Pro
                                             </span>
