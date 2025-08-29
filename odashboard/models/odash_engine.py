@@ -180,18 +180,15 @@ class DashboardEngine(models.Model):
         code = engine.code
         if not code:
             _logger.error("No engine code available")
-            return {'error': 'No engine code available'}
+            return {'error': _('No engine code available')}
         
         # Try to execute the current code
         try:
-            # Create a namespace that will be shared by all functions
-            # Using the same dictionary for globals and locals ensures all functions
-            # share the same namespace and can reference each other
             shared_namespace = {}
             
             # Execute the code in the shared namespace
             exec(code, shared_namespace, shared_namespace)
-            
+            print(shared_namespace)
             # Check if the method exists in the namespace
             if method_name in shared_namespace:
                 func = shared_namespace[method_name]
@@ -232,3 +229,172 @@ class DashboardEngine(models.Model):
                     return {'error': f"Error in engine execution: {str(e)}. Fallback also failed: {str(fallback_error)}"}
             
             return {'error': f"Error in engine execution: {str(e)}"}
+
+    def execute_unified_request(self, action, parameters, env, request=None):
+        """
+        Unified request dispatcher that routes requests to appropriate engine methods.
+        
+        This method dynamically dispatches requests to the engine without requiring
+        hardcoded action mappings, making it fully extensible through engine updates.
+        
+        Args:
+            action (str): The action to perform (method name in engine)
+            parameters (dict): Action-specific parameters
+            env: Odoo environment
+            request: HTTP request object (optional, needed for some actions)
+            
+        Returns:
+            dict: Standardized response with 'success', 'data', and 'error' keys
+        """
+        self.ensure_one()
+        
+        try:
+            # First, try to get action configuration from the engine itself
+            # This allows the engine to define its own action mappings
+            engine_config = self.execute_engine_code('get_action_config', action)
+            
+            if engine_config and engine_config.get('success'):
+                # Engine provides action configuration
+                config = engine_config.get('data', {})
+                method_name = config.get('method', action)
+                
+                # Build arguments based on engine configuration
+                args = self._build_engine_args(config, parameters, env, request)
+                
+                # Validate parameters if engine specifies requirements
+                validation_error = self._validate_engine_parameters(config, parameters)
+                if validation_error:
+                    return validation_error
+                    
+            else:
+                # Fallback to legacy action mapping for backward compatibility
+                legacy_config = self._get_legacy_action_config(action, parameters, env, request)
+                if not legacy_config:
+                    return {
+                        'success': False,
+                        'error': _("Unsupported action: %s") % action
+                    }
+                
+                method_name = legacy_config['method']
+                args = legacy_config['args']
+                
+                # Legacy parameter validation
+                validation_error = self._validate_legacy_parameters(action, parameters)
+                if validation_error:
+                    return validation_error
+            
+            # Execute the engine method
+            result = self.execute_engine_code(method_name, *args)
+            
+            # Standardize the response format
+            return self._standardize_response(result)
+                
+        except Exception as e:
+            _logger.exception("Error in execute_unified_request: %s", e)
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def _build_engine_args(self, config, parameters, env, request):
+        """Build arguments for engine method based on configuration."""
+        args = []
+        arg_specs = config.get('args', [])
+        
+        for arg_spec in arg_specs:
+            if arg_spec == 'env':
+                args.append(env)
+            elif arg_spec == 'request':
+                args.append(request)
+            elif arg_spec == 'parameters':
+                args.append(parameters)
+            elif isinstance(arg_spec, dict):
+                # Parameter mapping: {'param': 'model_name', 'default': None}
+                param_name = arg_spec.get('param')
+                default_value = arg_spec.get('default')
+                args.append(parameters.get(param_name, default_value))
+            else:
+                # Direct parameter name
+                args.append(parameters.get(arg_spec))
+        
+        return args
+
+    def _validate_engine_parameters(self, config, parameters):
+        """Validate parameters based on engine configuration."""
+        required_params = config.get('required_params', [])
+        
+        for param in required_params:
+            if not parameters.get(param):
+                return {
+                    'success': False,
+                    'error': _("Missing required parameter: %s") % param
+                }
+        
+        return None
+
+    def _get_legacy_action_config(self, action, parameters, env, request):
+        """Get legacy action configuration for backward compatibility."""
+        legacy_map = {
+            'get_models': {
+                'method': 'get_models',
+                'args': [env]
+            },
+            'get_model_fields': {
+                'method': 'get_model_fields', 
+                'args': [parameters.get('model_name'), env]
+            },
+            'get_model_records': {
+                'method': 'get_model_records',
+                'args': [parameters.get('model_name'), parameters, env]
+            },
+            'get_model_search': {
+                'method': 'get_model_search',
+                'args': [parameters.get('model_name'), parameters, request]
+            },
+            'process_dashboard_request': {
+                'method': 'process_dashboard_request',
+                'args': [parameters.get('request_data', parameters), env]
+            }
+        }
+        
+        return legacy_map.get(action)
+
+    def _validate_legacy_parameters(self, action, parameters):
+        """Validate parameters for legacy actions."""
+        if action in ['get_model_fields', 'get_model_records', 'get_model_search'] and not parameters.get('model_name'):
+            return {'success': False, 'error': _("Missing required parameter: model_name")}
+        elif action == 'process_dashboard_request' and not parameters.get('request_data'):
+            return {'success': False, 'error': _("Missing required parameter: request_data")}
+        
+        return None
+
+    def _standardize_response(self, result):
+        """Standardize engine response format."""
+        if isinstance(result, dict):
+            if 'success' in result:
+                # Already in standardized format
+                return result
+            elif 'error' in result:
+                # Error format from engine
+                return {
+                    'success': False,
+                    'error': result['error']
+                }
+            elif 'data' in result:
+                # Data format from engine
+                return {
+                    'success': True,
+                    'data': result['data']
+                }
+            else:
+                # Raw data format
+                return {
+                    'success': True,
+                    'data': result
+                }
+        else:
+            # Raw result
+            return {
+                'success': True,
+                'data': result
+            }
