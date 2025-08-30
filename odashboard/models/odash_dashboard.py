@@ -6,7 +6,6 @@ import requests
 from datetime import datetime
 
 from odoo import models, fields, api
-from odoo.addons.website_generator.models import page
 
 
 def generate_random_string(n):
