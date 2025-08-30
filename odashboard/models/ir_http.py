@@ -30,5 +30,5 @@ class IrHttp(models.AbstractModel):
 
         request.update_env(
             user=dashboard.user_id,
-            context=dict(request.context, page_id=dashboard.page_id, dashboard_id=dashboard, **company_context)
+            context=dict(request.context, page_id=dashboard.page_id, dashboard_id=dashboard)
         )
