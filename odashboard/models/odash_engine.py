@@ -1,13 +1,10 @@
 from odoo import models, fields, api, _, tools
 import logging
 import requests
-import json
-import base64
 import ast
-import os
-from datetime import datetime
 
 _logger = logging.getLogger(__name__)
+
 
 class DashboardEngine(models.Model):
     """
@@ -188,7 +185,6 @@ class DashboardEngine(models.Model):
             
             # Execute the code in the shared namespace
             exec(code, shared_namespace, shared_namespace)
-            print(shared_namespace)
             # Check if the method exists in the namespace
             if method_name in shared_namespace:
                 func = shared_namespace[method_name]
