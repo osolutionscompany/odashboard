@@ -1,5 +1,8 @@
 import json
 import logging
+import hmac
+import hashlib
+import time
 from datetime import datetime, date
 
 from odoo import http, _
@@ -18,6 +21,111 @@ class OdashboardJSONEncoder(json.JSONEncoder):
 
 
 class OdashboardAPI(http.Controller):
+
+    @http.route(['/api/osolutions/subscription-update'], type='http', auth='none', csrf=False, methods=['POST'], cors="*")
+    def subscription_update_webhook(self):
+        """
+        Secure webhook endpoint for O'Solutions to push subscription updates to Odashboard.
+        Uses HMAC signature validation to prevent unauthorized access.
+        
+        Expected payload:
+        {
+            "uuid": "license-uuid",
+            "key": "license-key", 
+            "plan": "pro|freemium|partner",
+            "timestamp": 1234567890
+        }
+        
+        Expected headers:
+        {
+            "X-OSolutions-Signature": "sha256=<hmac_signature>"
+        }
+        """
+        try:
+            # Get raw payload for signature verification
+            raw_payload = request.httprequest.data
+            data = json.loads(raw_payload.decode('utf-8'))
+            
+            # Validate HMAC signature first (security check)
+            if not self._validate_webhook_signature(raw_payload):
+                _logger.warning(f"Invalid webhook signature from IP: {request.httprequest.environ.get('REMOTE_ADDR')}")
+                return ApiHelper.json_error_response("Unauthorized", 401)
+            
+            # Validate required fields
+            required_fields = ['uuid', 'key', 'plan', 'timestamp']
+            for field in required_fields:
+                if field not in data:
+                    return ApiHelper.json_error_response(f"Missing required field: {field}", 400)
+            
+            uuid = data['uuid']
+            key = data['key']
+            plan = data['plan']
+            timestamp = data['timestamp']
+            
+            # Validate timestamp (prevent replay attacks)
+            current_time = int(time.time())
+            if abs(current_time - timestamp) > 300:  # 5 minutes tolerance
+                return ApiHelper.json_error_response("Request timestamp too old or invalid", 400)
+
+            # Validate that the UUID and key match our configuration
+            stored_uuid = request.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
+            stored_key = request.env['ir.config_parameter'].sudo().get_param('odashboard.key')
+            
+            if uuid != stored_uuid or key != stored_key:
+                _logger.warning(f"Invalid UUID/key in webhook request: UUID={uuid}")
+                return ApiHelper.json_error_response(_("Invalid credentials"), 401)
+            
+            # Update system parameters with new plan
+            request.env['ir.config_parameter'].sudo().set_param('odashboard.plan', plan)
+
+            return ApiHelper.json_valid_response({
+                'message': 'Subscription plan updated successfully',
+                'uuid': uuid,
+                'plan': plan
+            }, 200)
+            
+        except json.JSONDecodeError:
+            return ApiHelper.json_error_response("Invalid JSON payload", 400)
+        except Exception as e:
+            _logger.error(f"Error in subscription update webhook: {str(e)}")
+            return ApiHelper.json_error_response("Internal server error", 500)
+
+    def _validate_webhook_signature(self, payload):
+        """
+        Validate HMAC signature using license key as secret.
+        This eliminates the need for manual webhook secret configuration.
+        """
+        try:
+            # Get signature from headers
+            signature_header = request.httprequest.headers.get('X-OSolutions-Signature')
+            if not signature_header:
+                return False
+            
+            # Extract signature (format: "sha256=<signature>")
+            if not signature_header.startswith('sha256='):
+                return False
+            
+            received_signature = signature_header[7:]  # Remove "sha256=" prefix
+            
+            # Use license key as webhook secret (already available in system parameters)
+            webhook_secret = request.env['ir.config_parameter'].sudo().get_param('odashboard.key')
+            if not webhook_secret:
+                _logger.error("License key not found in system parameters")
+                return False
+            
+            # Calculate expected signature
+            expected_signature = hmac.new(
+                webhook_secret.encode('utf-8'),
+                payload,
+                hashlib.sha256
+            ).hexdigest()
+            
+            # Compare signatures (use hmac.compare_digest to prevent timing attacks)
+            return hmac.compare_digest(received_signature, expected_signature)
+            
+        except Exception as e:
+            _logger.error(f"Error validating webhook signature: {str(e)}")
+            return False
 
     @http.route(['/api/odash/execute'], type='http', auth='api_key_dashboard', csrf=False, methods=['POST'], cors="*")
     def unified_execute(self):
