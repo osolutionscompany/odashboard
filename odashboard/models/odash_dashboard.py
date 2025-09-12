@@ -17,7 +17,7 @@ def generate_random_string(n):
 def generate_connection_url(connection_url, is_public, token, api_url, user, companies_ids):
     if user:
         user_id = user.id
-        partner_id = user.partner_id
+        partner_id = user.partner_id.id
         editor_viewer = "editor" if user.has_group('odashboard.group_odashboard_editor') else "viewer"
         partner_lang = user.lang.split('_')[0]
     else:
