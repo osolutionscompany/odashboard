@@ -9,13 +9,11 @@ export class OdashboardIframeWidget extends Component {
         // Retrieve the URL from the record's data to use as the iframe's src
         this.companyService = useService("company");
         const companyIds = this.companyService.activeCompanyIds;
-
         // Build the iframe URL with the company_ids parameter
         const baseUrl = this.props.record.data.connection_url || "";
         const companiesParam = `&company_ids=${companyIds.join(",")}`;
 
         this.iframeSrc = baseUrl + companiesParam;
-
         // Services
         this.actionService = useService("action");
         this.orm = useService("orm");
