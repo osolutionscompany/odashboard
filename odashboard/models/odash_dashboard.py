@@ -6,13 +6,29 @@ import requests
 from datetime import datetime
 
 from odoo import models, fields, api
-from odoo.addons.website_generator.models import page
 
 
 def generate_random_string(n):
     characters = string.ascii_letters + string.digits
     random_string = ''.join(random.choice(characters) for _ in range(n))
     return random_string
+
+
+def generate_connection_url(connection_url, is_public, token, api_url, user, companies_ids):
+    if user:
+        user_id = user.id
+        partner_id = user.partner_id.id
+        editor_viewer = "editor" if user.has_group('odashboard.group_odashboard_editor') else "viewer"
+        partner_lang = user.lang.split('_')[0]
+    else:
+        user_id = 0
+        partner_id = 0
+        editor_viewer = "viewer"
+        partner_lang = "en"
+    base_url = connection_url
+    if is_public:
+        base_url += "/public"
+    return f"{base_url}?token={token}|{urllib.parse.quote(f'{api_url}/api', safe='')}|{uuid.uuid4()}|{user_id}|{partner_id}|{editor_viewer}|{','.join(str(id) for id in companies_ids)}&lang={partner_lang}"
 
 
 class Dashboard(models.Model):
@@ -58,7 +74,7 @@ class Dashboard(models.Model):
         new_token = generate_random_string(64) if not dashboard_id.token else dashboard_id.token
         companies_ids = self.env['res.company'].search([])
 
-        new_connection_url = f"{connection_url}/public?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|0|0|viewer|{','.join(str(id) for id in companies_ids.ids)}"
+        new_connection_url = generate_connection_url(connection_url, True, new_token, base_url, None, companies_ids.ids)
 
         dashboard_id.write({
             "token": new_token,
@@ -95,7 +111,7 @@ class Dashboard(models.Model):
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
         new_token = generate_random_string(64) if not self.token else self.token
 
-        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.user_id.id}|{self.env.user.partner_id.id}|{'editor' if self.user_id.has_group('odashboard.group_odashboard_editor') else 'viewer'}|{','.join(str(id) for id in companies_ids)}"
+        new_connection_url = generate_connection_url(connection_url, False, new_token, base_url, self.user_id, companies_ids)
         self.write({
             "token": new_token,
             "connection_url": new_connection_url,
@@ -109,7 +125,7 @@ class Dashboard(models.Model):
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
         new_token = generate_random_string(64) if not self.token else self.token
 
-        new_connection_url = f"{connection_url}?token={new_token}|{urllib.parse.quote(f'{base_url}/api', safe='')}|{uuid.uuid4()}|{self.user_id.id}|{self.user_id.partner_id.id}|{'editor' if self.env.user.has_group('odashboard.group_odashboard_editor') else 'viewer'}|{','.join(str(id) for id in self.env.companies.ids)}"
+        new_connection_url = generate_connection_url(connection_url, False, new_token, base_url, self.user_id, self.env.companies.ids)
         self.write({
             "token": new_token,
             "connection_url": new_connection_url,
