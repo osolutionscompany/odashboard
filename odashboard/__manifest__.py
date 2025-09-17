@@ -29,6 +29,7 @@
         'views/odash_dashboard_views.xml',
         # Wizards
         'wizards/odash_config_import_wizard_views.xml',
+        'wizards/odash_config_export_wizard_views.xml',
         # Menu
         'views/menu_items.xml',
     ],

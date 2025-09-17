@@ -55,7 +55,7 @@
         <menuitem name="Export Configurations"
                   groups="odashboard.group_odashboard_editor,base.group_system"
                   id="menu_odash_export_config"
-                  action="action_export_odash_config"
+                  action="action_odash_config_export_wizard"
                   parent="menu_odash_configuration_root"
                   sequence="30"
         />
