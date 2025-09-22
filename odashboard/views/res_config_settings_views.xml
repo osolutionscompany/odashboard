@@ -76,8 +76,8 @@
                                                 <span class="fa fa-check"/>
                                                 key is synchronized
                                             </div>
-                                            <field name="odashboard_key_synchronized"
-                                                   invisible="1"/>
+                                            <field name="odashboard_key_synchronized" invisible="True"/>
+                                            <field name="odashboard_plan" invisible="True"/>
                                         </div>
                                     </div>
                                     <div class="col-12 col-lg-6 o_setting_box"
