@@ -3,12 +3,13 @@
 import {registry} from "@web/core/registry";
 import {Component, onMounted, onWillUnmount} from "@odoo/owl";
 import {useService} from "@web/core/utils/hooks";
+import { user } from "@web/core/user";
+
 
 export class OdashboardIframeWidget extends Component {
     setup() {
         // Retrieve the URL from the record's data to use as the iframe's src
-        this.companyService = useService("company");
-        const companyIds = this.companyService.activeCompanyIds;
+        const companyIds = user.activeCompanies.map((c) => c.id);
         // Build the iframe URL with the company_ids parameter
         const baseUrl = this.props.record.data.connection_url || "";
         const companiesParam = `&company_ids=${companyIds.join(",")}`;
