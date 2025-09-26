@@ -10,6 +10,7 @@
     'depends': [
         'base',
         'web',
+        'mail',
     ],
     'data': [
         # Security
@@ -19,6 +20,8 @@
         # Data
         'data/ir_config_parameter.xml',
         'data/ir_cron.xml',
+        'data/ir_cron_pdf_reports.xml',
+        'data/mail_template_pdf_report.xml',
 
         # Views
         'views/res_config_settings_views.xml',
@@ -27,6 +30,7 @@
         'views/odash_config_views.xml',
         'views/dashboard_public_views.xml',
         'views/odash_dashboard_views.xml',
+        'views/odash_pdf_report_views.xml',
         # Wizards
         'wizards/odash_config_import_wizard_views.xml',
         # Menu

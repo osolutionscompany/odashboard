@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Email template for PDF reports -->
+        <record id="mail_template_pdf_report" model="mail.template">
+            <field name="name">Dashboard PDF Report</field>
+            <field name="model_id" ref="model_odash_pdf_report"/>
+            <field name="subject">Dashboard Report: {{object.name}}</field>
+            <field name="email_from">no-reply@odashboard.app</field>
+            <field name="body_html" type="html">
+                <div>
+                    Todo
+                </div>
+            </field>
+            <field name="lang">{{object.env.user.lang}}</field>
+            <field name="auto_delete" eval="True"/>
+        </record>
+    </data>
+</odoo>

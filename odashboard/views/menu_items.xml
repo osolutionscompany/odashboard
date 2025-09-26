@@ -67,5 +67,13 @@
                   parent="menu_odash_configuration_root"
                   sequence="31"
         />
+
+        <menuitem name="PDF Reports"
+                  groups="odashboard.group_odashboard_editor,base.group_system"
+                  id="menu_odash_pdf_reports"
+                  action="action_odash_pdf_report"
+                  parent="menu_odash_configuration_root"
+                  sequence="40"
+        />
     </data>
 </odoo>
