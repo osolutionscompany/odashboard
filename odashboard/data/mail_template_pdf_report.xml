@@ -46,6 +46,7 @@
                 </div>
             </field>
             <field name="auto_delete" eval="True"/>
+            <field name="lang">{{ctx.get('recipient_lang')}}</field>
             <field name="description">Your scheduled dashboard report is ready.</field>
         </record>
     </data>

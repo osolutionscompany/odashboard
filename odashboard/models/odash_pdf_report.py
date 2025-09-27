@@ -307,7 +307,8 @@ class OdashPdfReport(models.Model):
             
             # Prepare email context
             email_context = {
-                'recipient_name': recipient['name']
+                'recipient_name': recipient['name'],
+                'recipient_lang': recipient['lang'],
             }
             
             # Send email
@@ -316,7 +317,6 @@ class OdashPdfReport(models.Model):
                 email_values={
                     'email_to': recipient['email'],
                     'attachment_ids': [(6, 0, [attachment.id])],
-                    'lang': recipient['lang'],
                     'email_from': self.env.company.email
                 },
                 force_send=True
