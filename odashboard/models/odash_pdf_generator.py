@@ -92,8 +92,6 @@ class OdashPdfGenerator(models.AbstractModel):
             
             # Generate PDF for each page and merge
             for i, page in enumerate(pages):
-                _logger.info(f"Processing page {i+1}/{len(pages)}: {page.name}")
-                
                 try:
                     # Generate PDF for this page
                     page_pdf_data = self._generate_single_page_pdf(page, pdf_server_url)
@@ -117,12 +115,10 @@ class OdashPdfGenerator(models.AbstractModel):
             # Get the merged PDF data
             merged_pdf_data = output_buffer.getvalue()
             output_buffer.close()
-            
-            _logger.info(f"Successfully merged {len(pages)} pages into single PDF report")
+
             return merged_pdf_data
             
         except Exception as e:
-            _logger.error(f"Error merging PDF pages: {str(e)}")
             raise UserError(_("Failed to merge PDF pages: %s") % str(e))
 
     @api.model

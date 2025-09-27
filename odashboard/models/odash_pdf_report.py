@@ -31,8 +31,11 @@ class OdashPdfReport(models.Model):
         ('quarterly', 'Quarterly'),
     ], string='Sending Period', required=True, default='weekly', help="How often to send the report")
     
-    send_time = fields.Float(string='Send Time (Hour)', default=9.0, 
-                            help="Time of day to send the report (24h format, e.g., 9.5 = 9:30 AM)")
+    send_time = fields.Float(
+        string='Send Time (Hour)',
+        default=9.0,
+        help="Time of day to send the report (24h format, e.g., 9.5 = 9:30 AM)"
+    )
     
     # Weekly specific
     weekday = fields.Selection([
@@ -46,39 +49,38 @@ class OdashPdfReport(models.Model):
     ], string='Day of Week', default='0', help="Day of week for weekly reports")
     
     # Monthly specific
-    day_of_month = fields.Integer(string='Day of Month', default=1, 
-                                 help="Day of month for monthly/quarterly reports (1-28)")
+    day_of_month = fields.Integer(
+        string='Day of Month',
+        default=1,
+        help="Day of month for monthly/quarterly reports (1-28)"
+    )
     
     # Recipients Configuration
-    recipient_user_ids = fields.Many2many('res.users', string='Recipient Users',
-                                         domain=[('share', '=', False)],
-                                         help="Users who will receive the PDF report")
+    recipient_user_ids = fields.Many2many(
+        comodel_name='res.users',
+        string='Recipient Users',
+        domain=[('share', '=', False)],
+        help="Users who will receive the PDF report"
+    )
     
-    recipient_emails = fields.Text(string='Additional Email Recipients', 
-                                  help="Additional email addresses (one per line) to send the report to")
+    recipient_emails = fields.Text(
+        string='Additional Email Recipients',
+        help="Additional email addresses (one per line) to send the report to"
+    )
     
     # Pages Configuration
-    page_ids = fields.Many2many('odash.config', string='Dashboard Pages',
-                               domain=[('is_page_config', '=', True)],
-                               help="Dashboard pages to include in the PDF report")
+    page_ids = fields.Many2many(
+        comodel_name='odash.config',
+        string='Dashboard Pages',
+        domain=[('is_page_config', '=', True)],
+        help="Dashboard pages to include in the PDF report"
+    )
     
-    include_all_pages = fields.Boolean(string='Include All Pages', default=False,
-                                      help="Include all available dashboard pages (ignores specific page selection)")
-    
-    # PDF Configuration
-    pdf_orientation = fields.Selection([
-        ('portrait', 'Portrait'),
-        ('landscape', 'Landscape'),
-    ], string='PDF Orientation', default='landscape', help="Orientation of the PDF pages")
-    
-    pdf_format = fields.Selection([
-        ('A4', 'A4'),
-        ('A3', 'A3'),
-        ('letter', 'Letter'),
-    ], string='PDF Format', default='A4', help="Page format for the PDF")
-    
-    include_cover_page = fields.Boolean(string='Include Cover Page', default=True,
-                                       help="Add a cover page with report information")
+    include_all_pages = fields.Boolean(
+        string='Include All Pages',
+        default=False,
+        help="Include all available dashboard pages (ignores specific page selection)"
+    )
     
     # Execution tracking
     last_sent_date = fields.Datetime(string='Last Sent Date', readonly=True)
@@ -174,6 +176,7 @@ class OdashPdfReport(models.Model):
                     'email': user.email,
                     'name': user.name,
                     'user_id': user.id,
+                    'lang': user.lang,
                 })
         
         # Add additional emails
@@ -185,6 +188,7 @@ class OdashPdfReport(models.Model):
                         'email': email,
                         'name': email.split('@')[0],
                         'user_id': False,
+                        'lang': self.env.user.lang or 'en_US',
                     })
         
         return recipients
@@ -193,7 +197,6 @@ class OdashPdfReport(models.Model):
         """Manual action to send the report immediately"""
         self.ensure_one()
         try:
-            raise ValidationError(_("This feature is not available yet."))
             self._generate_and_send_report()
             return {
                 'type': 'ir.actions.client',
@@ -245,10 +248,7 @@ class OdashPdfReport(models.Model):
     def _generate_pdf_report(self):
         """Generate the PDF report content"""
         self.ensure_one()
-        
-        # Use the PDF generator service
-        pdf_generator = self.env['odash.pdf.generator']
-        return pdf_generator.generate_dashboard_pdf(self)
+        return self.env['odash.pdf.generator'].sudo().generate_dashboard_pdf(self)
 
     def _generate_and_send_report(self):
         """Generate PDF and send via email"""
@@ -307,8 +307,7 @@ class OdashPdfReport(models.Model):
             
             # Prepare email context
             email_context = {
-                'recipient_name': recipient['name'],
-                'default_attachment_ids': [(6, 0, [attachment.id])],
+                'recipient_name': recipient['name']
             }
             
             # Send email
@@ -317,6 +316,8 @@ class OdashPdfReport(models.Model):
                 email_values={
                     'email_to': recipient['email'],
                     'attachment_ids': [(6, 0, [attachment.id])],
+                    'lang': recipient['lang'],
+                    'email_from': self.env.company.email
                 },
                 force_send=True
             )
