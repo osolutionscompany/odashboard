@@ -18,7 +18,6 @@ class OdashPdfReport(models.Model):
     _order = 'name'
 
     name = fields.Char(string='Report Name', required=True, help="Name of the PDF report configuration")
-    sequence = fields.Integer(string='Sequence', default=1)
     active = fields.Boolean(string='Active', default=True, help="Whether this report configuration is active")
     
     # Report Configuration

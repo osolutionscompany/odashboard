@@ -72,11 +72,11 @@
                                     <field name="include_all_pages" widget="boolean_toggle"/>
                                 </group>
                                 <field name="page_ids" invisible="include_all_pages" options="{'no_create': True}">
-                                    <list>
+                                    <tree>
                                         <field name="sequence" widget="handle"/>
                                         <field name="name"/>
                                         <field name="access_summary"/>
-                                    </list>
+                                    </tree>
                                 </field>
                             </page>
 
@@ -108,11 +108,11 @@
         </record>
 
         <!-- PDF Report list View -->
-        <record id="view_odash_pdf_report_list" model="ir.ui.view">
-            <field name="name">odash.pdf.report.list</field>
+        <record id="view_odash_pdf_report_tree" model="ir.ui.view">
+            <field name="name">odash.pdf.report.tree</field>
             <field name="model">odash.pdf.report</field>
             <field name="arch" type="xml">
-                <list string="PDF Reports" decoration-muted="not active">
+                <tree string="PDF Reports" decoration-muted="not active">
                     <field name="name"/>
                     <field name="period"/>
                     <field name="next_send_date"/>
@@ -125,7 +125,7 @@
                     <field name="active"/>
                     <button name="action_send_now" string="Send Now" type="object" icon="fa-paper-plane"
                             invisible="not active"/>
-                </list>
+                </tree>
             </field>
         </record>
 
