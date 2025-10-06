@@ -77,6 +77,7 @@
                     
                     <!-- Preview Section -->
                     <div class="row" invisible="not show_preview">
+                        <field name="show_preview" invisible="1"/>
                         <div class="col-12">
                             <h3 style="font-size: 18px; font-weight: 500; color: #2c3e50; margin-bottom: 16px;">
                                 Preview
