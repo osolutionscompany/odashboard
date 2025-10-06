@@ -19,4 +19,9 @@
                eval="[(4, ref('group_odashboard_viewer'))]"/>
     </record>
 
+    <!-- Héritage automatique: les membres du groupe Paramètres système sont automatiquement éditeurs Odashboard -->
+    <record id="base.group_system" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_odashboard_editor'))]"/>
+    </record>
+
 </odoo>
