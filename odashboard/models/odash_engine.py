@@ -3,6 +3,8 @@ import logging
 import requests
 import ast
 
+from odoo.exceptions import ValidationError
+
 _logger = logging.getLogger(__name__)
 
 
@@ -13,6 +15,7 @@ class DashboardEngine(models.Model):
     """
     _name = 'odash.engine'
     _description = 'Dashboard Engine'
+    _order = 'create_date desc'
 
     name = fields.Char(string='Name', default='Dashboard Engine', readonly=True)
     version = fields.Char(string='Version', default='1.0.0', readonly=True)
@@ -28,7 +31,7 @@ class DashboardEngine(models.Model):
         """Get the base URL for GitHub repository."""
         return self.env['ir.config_parameter'].sudo().get_param(
             'odashboard.github_base_url', 
-            'https://raw.githubusercontent.com/Notdoo/odashboard.engine/main/'
+            'https://raw.githubusercontent.com/osolutionscompany/odashboard.engine/main/'
         )
     @api.model
     def _get_versions_url(self):
@@ -38,16 +41,32 @@ class DashboardEngine(models.Model):
 
     @api.model
     def _get_single_record(self):
-        """Get or create the single engine record."""
+        """Get or create the single engine record with proper locking."""
+        # Use FOR UPDATE lock to prevent race conditions
+        self.env.cr.execute("""
+            SELECT id
+            FROM odash_engine
+            ORDER BY id LIMIT 1 
+            FOR UPDATE NOWAIT
+        """)
+        result = self.env.cr.fetchone()
+
+        if result:
+            return self.browse(result[0])
+
+        # Double-check after acquiring lock
         engine = self.search([], limit=1)
-        if not engine:
-            engine = self.create([{
-                'name': 'Dashboard Engine',
-                'version': '0.0.0',
-                'code': False,
-                'previous_code': False,
-            }])
-            engine.check_for_updates()
+        if engine:
+            return engine
+
+        engine = self.create({
+            'name': 'Dashboard Engine',
+            'version': '0.0.0',
+            'code': False,
+            'previous_code': False,
+        })
+        self.env.cr.commit()
+        engine.check_for_updates()
         return engine
 
     def _add_to_log(self, message):
@@ -394,3 +413,17 @@ class DashboardEngine(models.Model):
                 'success': True,
                 'data': result
             }
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Override create to enforce singleton pattern."""
+        existing = self.search([], limit=1)
+        if existing:
+            raise ValidationError(_(
+                'Cannot create Dashboard Engine record. '
+                'Only one engine record is allowed and one already exists (ID: %s). '
+                'Use _get_single_record() method instead.'
+            ) % existing.id)
+        if len(vals_list) > 1:
+            raise ValidationError(_("Only one Dashboard Engine record can be created at a time"))
+        return super(DashboardEngine, self).create(vals_list)
