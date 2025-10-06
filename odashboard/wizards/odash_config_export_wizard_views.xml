@@ -47,6 +47,7 @@
 
                     <!-- Preview Section -->
                     <group string="Export Preview" invisible="not show_preview">
+                        <field name="show_preview" invisible="1"/>
                         <div class="alert alert-success" role="alert" invisible="config_count == 0">
                             <i class="fa fa-check-circle" title="Export Preview"/> <strong><field name="config_count" class="oe_inline"/> configuration(s)</strong> will be exported.
                         </div>
