@@ -1,6 +1,6 @@
 import uuid
 import logging
-from odoo import http
+from odoo import http, _
 from odoo.http import request
 
 from .api_helper import ApiHelper
@@ -37,7 +37,74 @@ class OdashConfigAPI(http.Controller):
     Provides two sets of endpoints:
     - /api/odash/pages/* for page configurations
     - /api/odash/data/* for data configurations
+    - /api/odash/categories for page categories
     """
+
+    # ---- Categories ----
+    
+    @http.route('/api/odash/categories', type='http', auth='api_key_dashboard', methods=['GET'], csrf=False, cors="*")
+    def categories_collection(self, **kw):
+        """
+        Get all page categories
+        """
+        try:
+            categories = request.env['odash.category'].sudo().search([('active', '=', True)], order='sequence asc')
+            result = []
+            
+            for category in categories:
+                result.append({
+                    'id': category.id,
+                    'name': category.name,
+                    'description': category.description or '',
+                    'icon': category.icon or '',
+                    'sequence': category.sequence,
+                    'page_count': category.page_count,
+                })
+                
+            return ApiHelper.json_valid_response(result, 200)
+            
+        except Exception as e:
+            _logger.error(f"Error getting categories: {e}")
+            return ApiHelper.json_error_response(e, 500)
+    
+    @http.route('/api/odash/categories/create', type='http', auth='api_key_dashboard', methods=['POST'], csrf=False, cors="*")
+    def categories_create(self, **kw):
+        """
+        Create a new page category
+        """
+        try:
+            data = ApiHelper.load_json_data(request)
+            
+            if not data.get('name'):
+                return ApiHelper.json_error_response(_("Category name is required"), 400)
+            
+            # Get the highest sequence number and add 10
+            last_category = request.env['odash.category'].sudo().search([], order='sequence desc', limit=1)
+            next_sequence = (last_category.sequence + 10) if last_category else 10
+            
+            # Create the category
+            category = request.env['odash.category'].sudo().create({
+                'name': data.get('name'),
+                'description': data.get('description', ''),
+                'icon': data.get('icon', ''),
+                'sequence': next_sequence,
+                'active': True,
+            })
+            
+            result = {
+                'id': category.id,
+                'name': category.name,
+                'description': category.description or '',
+                'icon': category.icon or '',
+                'sequence': category.sequence,
+                'page_count': 0,
+            }
+            
+            return ApiHelper.json_valid_response(result, 201)
+            
+        except Exception as e:
+            _logger.error(f"Error creating category: {e}")
+            return ApiHelper.json_error_response(str(e), 500)
 
     # ---- Page Configurations ----
 
@@ -64,7 +131,18 @@ class OdashConfigAPI(http.Controller):
                 
                 for config in configs:
                     if config.config and check_access(config, request.env.user):
-                        result.append(config.config)
+                        page_data = config.config.copy() if isinstance(config.config, dict) else config.config
+
+                        page_data['category_id'] = config.category_id.id or None
+                        page_data['category_name'] = config.category_id.name or None
+                        
+                        # Also add category_id to root.props for Puck editor
+                        if 'root' in page_data and isinstance(page_data['root'], dict):
+                            if 'props' not in page_data['root']:
+                                page_data['root']['props'] = {}
+                            page_data['root']['props']['category_id'] = page_data['category_id']
+                        
+                        result.append(page_data)
                         
                 return ApiHelper.json_valid_response(result, 200)
             
@@ -75,17 +153,35 @@ class OdashConfigAPI(http.Controller):
                 # Generate UUID if id not provided
                 if not data.get('id'):
                     data['id'] = str(uuid.uuid4())
+                
+                # Extract category_id from data
+                category_id = data.pop('category_id', None)
                     
                 # Create new config record
-                config = odash_config.sudo().create({
+                config_vals = {
                     'is_page_config': True,
                     'config_id': data.get('id'),
                     'config': data
-                })
+                }
+                
+                # Add category if provided
+                if category_id:
+                    config_vals['category_id'] = category_id
+                
+                config = odash_config.sudo().create(config_vals)
 
                 odash_config.clean_unused_config()
                 
-                return ApiHelper.json_valid_response(config.config, 201)
+                # Return config with category info
+                result = config.config.copy() if isinstance(config.config, dict) else config.config
+                if config.category_id:
+                    result['category_id'] = config.category_id.id
+                    result['category_name'] = config.category_id.name
+                else:
+                    result['category_id'] = None
+                    result['category_name'] = None
+                
+                return ApiHelper.json_valid_response(result, 201)
                 
         except Exception as e:
             operation = "getting" if method == 'GET' else "creating"
@@ -114,23 +210,60 @@ class OdashConfigAPI(http.Controller):
                 return ApiHelper.json_error_response("Page configuration not found", 404)
             
             if method == 'GET':
-                # Return the configuration
-                return ApiHelper.json_valid_response(config.config, 200)
+                # Return the configuration with category info
+                result = config.config.copy() if isinstance(config.config, dict) else config.config
+                
+                # Add category info at top level
+                if config.category_id:
+                    result['category_id'] = config.category_id.id
+                    result['category_name'] = config.category_id.name
+                else:
+                    result['category_id'] = None
+                    result['category_name'] = None
+                
+                # Also add category_id to root.props for Puck editor
+                if 'root' in result and isinstance(result['root'], dict):
+                    if 'props' not in result['root']:
+                        result['root']['props'] = {}
+                    result['root']['props']['category_id'] = result['category_id']
+                
+                return ApiHelper.json_valid_response(result, 200)
                 
             elif method == 'PUT':
                 # Update the configuration
                 data = ApiHelper.load_json_data(request)
                 
+                # Check if category_id is in the data before we modify it
+                has_category_id = 'category_id' in data
+                category_id = data.get('category_id')
+                
                 # Ensure ID remains the same
                 updated_data = data.copy()
                 updated_data['id'] = config_id
                 
-                # Update the configuration
-                config.sudo().write({
-                    'config': updated_data
-                })
+                # Remove category_id from config data (it's stored separately)
+                updated_data.pop('category_id', None)
                 
-                return ApiHelper.json_valid_response(config.config, 200)
+                # Prepare update values
+                update_vals = {'config': updated_data}
+                
+                # Update category if provided (including None to remove category)
+                if has_category_id:
+                    update_vals['category_id'] = category_id
+                
+                # Update the configuration
+                config.sudo().write(update_vals)
+                
+                # Return config with category info
+                result = config.config.copy() if isinstance(config.config, dict) else config.config
+                if config.category_id:
+                    result['category_id'] = config.category_id.id
+                    result['category_name'] = config.category_id.name
+                else:
+                    result['category_id'] = None
+                    result['category_name'] = None
+                
+                return ApiHelper.json_valid_response(result, 200)
                 
             elif method == 'DELETE':
                 # Delete the configuration

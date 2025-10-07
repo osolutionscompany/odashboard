@@ -13,16 +13,11 @@ class DashboardEngine(models.Model):
     """
     This model manages the Odashboard visualization engine code and its updates.
     It can automatically check for updates on GitHub and apply them when available.
+    Singleton pattern enforced via create() method override.
     """
     _name = 'odash.engine'
     _description = 'Dashboard Engine'
     _order = 'create_date desc'
-    
-    _sql_constraints = [
-        ('unique_engine_singleton', 
-         'CHECK(id = (SELECT MIN(id) FROM odash_engine))', 
-         'Only one Dashboard Engine record is allowed in the system!')
-    ]
 
     name = fields.Char(string='Name', default='Dashboard Engine', readonly=True)
     version = fields.Char(string='Version', default='1.0.0', readonly=True)

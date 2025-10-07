@@ -20,6 +20,13 @@ class OdashConfig(models.Model):
     is_page_config = fields.Boolean(string='Is Page Config', default=False)
     config_id = fields.Char(string='Config ID')
     config = fields.Json(string='Config')
+    
+    category_id = fields.Many2one(
+        'odash.category',
+        string='Category',
+        ondelete='set null',
+        help="Category for organizing dashboard pages"
+    )
 
     security_group_ids = fields.Many2many('odash.security.group', string='Security Groups')
     user_ids = fields.Many2many('res.users', string='Users', domain=[('share', '=', False)])
