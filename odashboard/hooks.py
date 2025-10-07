@@ -3,6 +3,8 @@
 import uuid
 import requests
 import logging
+from odoo.exceptions import UserError
+from odoo.tools.translate import _
 
 _logger = logging.getLogger(__name__)
 
@@ -35,26 +37,35 @@ def post_init_hook(env):
             'key': demo_key_uuid,
             'uuid': odashboard_uuid,
             'url': base_url,
-            'is_odash': True
         }
         
         # Make secure API call to create demo key
         try:
             response = requests.post(
-                f"{api_endpoint}/api/create/demo-key",
+                f"{api_endpoint}/api/get/odashboard_key",
                 json=api_data,
                 headers={'Content-Type': 'application/json'},
             )
             result = response.json().get('result', {})
+            if result.get('error'):
+                # TODO : In the hook it seems impossible to raise an User error......
+                error_msg = result.get('error')
+                _logger.error(f"Error creating demo key: {error_msg}")
+                # Store error for later display in UI
+                env['ir.config_parameter'].sudo().set_param('odashboard.init_error', error_msg)
+                raise UserError(_("Failed to create demo key: %s") % error_msg)
+
             if result.get('valid'):
                 sub_plan = result.get('odash_sub_plan', 'freemium')
                 demo_key = result.get('license_key', demo_key_uuid)
+                token = result.get('token', False)
                 _logger.info(f"Demo key successfully created and synchronized: {demo_key}")
                     
                 # Store demo key information in system parameters
                 env['ir.config_parameter'].sudo().set_param('odashboard.key', demo_key)
                 env['ir.config_parameter'].sudo().set_param('odashboard.plan', sub_plan)
                 env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', True)
+                env['ir.config_parameter'].sudo().set_param('odashboard.api.token', token)
             else:
                 _logger.error(f"API call failed with status {response.status_code}: {response.text}")
                 

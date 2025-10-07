@@ -208,7 +208,7 @@ class ResConfigSettings(models.TransientModel):
             'tag': 'reload',
         }
 
-    def set_demo_key(self):
+    def get_my_key(self):
         """
         Call the post_init_hook to create and sync a demo key
         """
