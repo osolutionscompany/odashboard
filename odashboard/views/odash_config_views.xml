@@ -3,7 +3,7 @@
         <field name="name">odash.config.list</field>
         <field name="model">odash.config</field>
         <field name="arch" type="xml">
-            <list string="Configurations" create="0">
+            <list string="Configurations" create="0" multi_edit="1">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="category_id" optional="show"/>
