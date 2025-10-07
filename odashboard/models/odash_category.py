@@ -88,6 +88,15 @@ class OdashCategory(models.Model):
             result.append((record.id, name))
         return result
 
+    def open_view_pages(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'odash.config',
+            'domain': [('category_id', '=', self.id)],
+            'view_mode': 'list,form',
+            'target': 'current',
+        }
+
     @api.depends('security_group_ids', 'user_ids')
     def _compute_access_summary(self):
         for record in self:
