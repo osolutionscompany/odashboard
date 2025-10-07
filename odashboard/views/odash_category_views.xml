@@ -47,16 +47,6 @@
                         <field name="description" placeholder="Brief description of this category..."/>
                     </group>
                     <notebook>
-                        <page name="pages" string="Pages" invisible="not page_ids">
-                            <field name="page_ids">
-                                <list editable="bottom" create="0" edit="1" delete="0">
-                                    <field name="sequence" widget="handle"/>
-                                    <field name="name"/>
-                                    <field name="access_summary"/>
-                                    <field name="allow_public_access" widget="boolean_toggle"/>
-                                </list>
-                            </field>
-                        </page>
                         <page name="security" string="Security">
                             <group>
                                 <field name="security_group_ids" widget="many2many_tags"

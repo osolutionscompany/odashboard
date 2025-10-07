@@ -90,6 +90,7 @@ class OdashCategory(models.Model):
 
     def open_view_pages(self):
         return {
+            'name': _('Pages'),
             'type': 'ir.actions.act_window',
             'res_model': 'odash.config',
             'domain': [('category_id', '=', self.id)],
