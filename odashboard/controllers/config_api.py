@@ -31,6 +31,29 @@ def check_access(config, user):
     return can_access
 
 
+def check_category_access(category, user):
+    """
+    Check if a user has access to a category based on security groups.
+    Editors have access to all categories.
+    """
+    if user.has_group('odashboard.group_odashboard_editor'):
+        return True
+    
+    # If no security groups defined, everyone can access
+    if not category.security_group_ids and not category.user_ids:
+        return True
+
+    if user in category.user_ids:
+        return True
+    
+    # Check if user is in any of the category's security groups
+    for group in category.security_group_ids:
+        if user in group.user_ids:
+            return True
+    
+    return False
+
+
 class OdashConfigAPI(http.Controller):
     """
     Controller for CRUD operations on Odash Configuration.
@@ -45,21 +68,23 @@ class OdashConfigAPI(http.Controller):
     @http.route('/api/odash/categories', type='http', auth='api_key_dashboard', methods=['GET'], csrf=False, cors="*")
     def categories_collection(self, **kw):
         """
-        Get all page categories
+        Get all page categories (filtered by user access)
         """
         try:
             categories = request.env['odash.category'].sudo().search([('active', '=', True)], order='sequence asc')
             result = []
             
             for category in categories:
-                result.append({
-                    'id': category.id,
-                    'name': category.name,
-                    'description': category.description or '',
-                    'icon': category.icon or '',
-                    'sequence': category.sequence,
-                    'page_count': category.page_count,
-                })
+                # Check if user has access to this category
+                if check_category_access(category, request.env.user):
+                    result.append({
+                        'id': category.id,
+                        'name': category.name,
+                        'description': category.description or '',
+                        'icon': category.icon or '',
+                        'sequence': category.sequence,
+                        'page_count': category.page_count,
+                    })
                 
             return ApiHelper.json_valid_response(result, 200)
             
@@ -131,6 +156,10 @@ class OdashConfigAPI(http.Controller):
                 
                 for config in configs:
                     if config.config and check_access(config, request.env.user):
+                        # Also check category access if page has a category
+                        if config.category_id and not check_category_access(config.category_id, request.env.user):
+                            continue
+                        
                         page_data = config.config.copy() if isinstance(config.config, dict) else config.config
 
                         page_data['category_id'] = config.category_id.id or None

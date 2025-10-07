@@ -24,9 +24,9 @@
             <form string="Category">
                 <sheet>
                     <div class="oe_button_box" name="button_box">
-                        <button name="%(odashboard.action_odash_config)d" 
-                                type="action" 
-                                class="oe_stat_button" 
+                        <button name="%(odashboard.action_odash_config)d"
+                                type="action"
+                                class="oe_stat_button"
                                 icon="fa-file-text-o">
                             <field name="page_count" widget="statinfo" string="Pages"/>
                         </button>
@@ -55,6 +55,27 @@
                                     <field name="allow_public_access" widget="boolean_toggle"/>
                                 </list>
                             </field>
+                        </page>
+                        <page name="security" string="Security">
+                            <group>
+                                <field name="security_group_ids" widget="many2many_tags"
+                                       placeholder="Select security groups (leave empty for all users)"/>
+                                <field name="user_ids" widget="many2many_avatar_user"
+                                       placeholder="Select users to have access this category (leave empty for default access)"/>
+                            </group>
+                            <div class="alert alert-info" role="alert">
+                                <p><strong>Access Control:</strong></p>
+                                <ul>
+                                    <li>If no security groups are selected, all users can access this category.</li>
+                                    <li>If security groups are selected, only users belonging to those groups can access
+                                        this category.</li>
+                                    <li>If specific users are selected, only those users can access this category.</li>
+                                    <li>You can combine both security groups and individual users.</li>
+                                    <li>Editors always have access to all categories.</li>
+                                    <li>Users without access to a category will not see the pages within that
+                                        category.</li>
+                                </ul>
+                            </div>
                         </page>
                     </notebook>
                 </sheet>

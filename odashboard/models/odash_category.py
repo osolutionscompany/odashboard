@@ -14,44 +14,51 @@ class OdashCategory(models.Model):
         translate=True,
         help="Name of the category (e.g., Sales, Support, Finance)"
     )
-    
     sequence = fields.Integer(
         string='Sequence',
         default=10,
         help="Determines the display order of categories"
     )
-    
     description = fields.Text(
         string='Description',
         translate=True,
         help="Brief description of what this category contains"
     )
-    
     active = fields.Boolean(
         string='Active',
         default=True,
         help="If unchecked, this category will be hidden"
     )
-    
     page_ids = fields.One2many(
-        'odash.config',
-        'category_id',
+        comodel_name='odash.config',
+        inverse_name='category_id',
         string='Pages',
         domain=[('is_page_config', '=', True)],
         help="Dashboard pages in this category"
     )
-    
     page_count = fields.Integer(
         string='Number of Pages',
         compute='_compute_page_count',
         store=True,
         help="Total number of pages in this category"
     )
-    
     icon = fields.Char(
         string='Icon',
         help="Font Awesome icon class (e.g., fa-chart-line, fa-users)"
     )
+    security_group_ids = fields.Many2many(
+        comodel_name='odash.security.group',
+        string='Security Groups',
+        help="Security groups that can access this category"
+    )
+    user_ids = fields.Many2many(
+        comodel_name='res.users',
+        string='Users',
+        domain=[('share', '=', False)],
+        help="Users that can access this category"
+    )
+    access_summary = fields.Char(string='Access summary', compute='_compute_access_summary')
+
     
     @api.depends('page_ids')
     def _compute_page_count(self):
@@ -80,3 +87,17 @@ class OdashCategory(models.Model):
                 name = f"{name} ({record.page_count})"
             result.append((record.id, name))
         return result
+
+    @api.depends('security_group_ids', 'user_ids')
+    def _compute_access_summary(self):
+        for record in self:
+            if not record.security_group_ids and not record.user_ids:
+                record.access_summary = _("All users")
+            else:
+                users_from_groups = record.security_group_ids.mapped('user_ids')
+                message = _("Custom access: %(count_group)s groups (%(count_user_from_group)s distinct users), %(count_user)s directly assigned users",
+                            count_group=len(record.security_group_ids),
+                            count_user_from_group=len(users_from_groups),
+                            count_user=len(record.user_ids)
+                            )
+                record.access_summary = message
