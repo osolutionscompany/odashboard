@@ -82,7 +82,7 @@ class OdashboardAPI(http.Controller):
             request.env['ir.config_parameter'].sudo().set_param('odashboard.api.token', token)
 
             return ApiHelper.json_valid_response({
-                'message': 'Subscription plan updated successfully',
+                'message': _('Subscription plan updated successfully'),
                 'uuid': uuid,
                 'plan': plan
             }, 200)
