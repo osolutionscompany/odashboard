@@ -34,6 +34,7 @@ class OdashboardAPI(http.Controller):
             "key": "license-key", 
             "plan": "pro|freemium|partner",
             "timestamp": 1234567890
+            "token" : JWT Token
         }
         
         Expected headers:
@@ -61,6 +62,7 @@ class OdashboardAPI(http.Controller):
             key = data['key']
             plan = data['plan']
             timestamp = data['timestamp']
+            token = data['token']
             
             # Validate timestamp (prevent replay attacks)
             current_time = int(time.time())
@@ -77,6 +79,7 @@ class OdashboardAPI(http.Controller):
             
             # Update system parameters with new plan
             request.env['ir.config_parameter'].sudo().set_param('odashboard.plan', plan)
+            request.env['ir.config_parameter'].sudo().set_param('odashboard.api.token', token)
 
             return ApiHelper.json_valid_response({
                 'message': 'Subscription plan updated successfully',
