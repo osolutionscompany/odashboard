@@ -2,6 +2,7 @@ from odoo import models, fields, api, _, tools
 import logging
 import requests
 import ast
+import hashlib
 
 from odoo.exceptions import ValidationError
 
@@ -16,6 +17,12 @@ class DashboardEngine(models.Model):
     _name = 'odash.engine'
     _description = 'Dashboard Engine'
     _order = 'create_date desc'
+    
+    _sql_constraints = [
+        ('unique_engine_singleton', 
+         'CHECK(id = (SELECT MIN(id) FROM odash_engine))', 
+         'Only one Dashboard Engine record is allowed in the system!')
+    ]
 
     name = fields.Char(string='Name', default='Dashboard Engine', readonly=True)
     version = fields.Char(string='Version', default='1.0.0', readonly=True)
@@ -41,33 +48,47 @@ class DashboardEngine(models.Model):
 
     @api.model
     def _get_single_record(self):
-        """Get or create the single engine record with proper locking."""
-        # Use FOR UPDATE lock to prevent race conditions
-        self.env.cr.execute("""
-            SELECT id
-            FROM odash_engine
-            ORDER BY id LIMIT 1 
-            FOR UPDATE NOWAIT
-        """)
-        result = self.env.cr.fetchone()
+        """Get or create the single engine record with proper locking.
 
-        if result:
-            return self.browse(result[0])
-
-        # Double-check after acquiring lock
+        Handles race conditions using double-checked locking.
+        Assumes PostgreSQL backend; falls back to simple creation if not.
+        """
+        # First, try a simple search (no lock needed for reads)
         engine = self.search([], limit=1)
         if engine:
             return engine
 
-        engine = self.create({
-            'name': 'Dashboard Engine',
-            'version': '0.0.0',
-            'code': False,
-            'previous_code': False,
-        })
-        self.env.cr.commit()
-        engine.check_for_updates()
-        return engine
+        # Generate a unique lock ID based on model name to avoid collisions
+        lock_id = int(hashlib.sha256(self._name.encode()).hexdigest()[:10], 16)  # Truncate to fit int64
+
+        # Only use locking when we need to create
+        try:
+            if self.env.cr.dbname.startswith('postgres'):  # Rough check for PostgreSQL
+                # Acquire advisory lock
+                self.env.cr.execute("SELECT pg_advisory_xact_lock(%s)", (lock_id,))
+
+            # Double-check after acquiring lock (if applicable)
+            engine = self.search([], limit=1)
+            if engine:
+                return engine
+
+            # Safe to create now
+            engine = self.create({
+                'name': 'Dashboard Engine',
+                'version': '0.0.0',
+                'code': False,
+                'previous_code': False,
+            })
+            engine.check_for_updates()
+            return engine
+
+        except Exception as e:
+            _logger.error(f"Error in _get_single_record: {str(e)}", exc_info=True)
+            # Fallback: one more search attempt
+            engine = self.search([], limit=1)
+            if engine:
+                return engine
+            raise ValueError("Failed to get or create engine record") from e  # Wrap with more context
 
     def _add_to_log(self, message):
         """Add a timestamped message to the update log."""
