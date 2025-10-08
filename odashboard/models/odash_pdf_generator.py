@@ -1,7 +1,12 @@
 import io
 import logging
 import requests
-from PyPDF2 import PdfReader, PdfWriter
+try:
+    from PyPDF2 import PdfReader, PdfWriter
+except ImportError:
+    # Old PyPDF2 (<= 1.26.0)
+    from PyPDF2 import PdfFileReader as PdfReader
+    from PyPDF2 import PdfFileWriter as PdfWriter
 
 from odoo import models, api, _
 from odoo.exceptions import UserError
