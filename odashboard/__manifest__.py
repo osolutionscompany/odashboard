@@ -12,9 +12,6 @@
         'web',
         'mail',
     ],
-    'external_dependencies': {
-        'python': ['PyPDF2'],
-    },
     'data': [
         # Security
         'security/odash_security.xml',
