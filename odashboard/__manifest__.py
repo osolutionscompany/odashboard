@@ -1,12 +1,12 @@
 {
     'name': 'Odashboard',
-    'version': '1.0',
+    'version': '17.0.0.0.0',
     'category': 'Dashboard',
     'summary': 'Odoo dashboard application',
     'description': """
         This module provides dashboard for Odoo.:
     """,
-    'author': 'OSolutions',
+    'author': "O'Solutions Company",
     'depends': [
         'base',
         'web',
