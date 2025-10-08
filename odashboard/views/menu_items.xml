@@ -36,6 +36,14 @@
                   sequence="10"
         />
         
+        <menuitem name="Pages categories"
+                  groups="odashboard.group_odashboard_editor,base.group_system"
+                  id="menu_odash_category_root"
+                  action="action_odash_category"
+                  parent="menu_odash_configuration_root"
+                  sequence="15"
+        />
+        
         <menuitem name="Pages"
                   groups="odashboard.group_odashboard_editor,base.group_system"
                   id="menu_odash_config_root"
@@ -49,7 +57,7 @@
                   id="menu_odash_dashboard_accesses_root"
                   action="action_odash_dashboard_accesses"
                   parent="menu_odash_configuration_root"
-                  sequence="20"
+                  sequence="25"
         />
 
         <menuitem name="Export Configurations"
