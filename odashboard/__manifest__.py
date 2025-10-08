@@ -31,6 +31,7 @@
         'views/dashboard_views.xml',
         'views/odash_security_group_views.xml',
         'views/odash_config_views.xml',
+        'views/odash_category_views.xml',
         'views/dashboard_public_views.xml',
         'views/odash_dashboard_views.xml',
         'views/odash_pdf_report_views.xml',
