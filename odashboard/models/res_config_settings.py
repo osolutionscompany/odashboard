@@ -3,7 +3,6 @@ import uuid
 import logging
 from werkzeug.urls import url_encode
 
-
 from odoo import models, fields, api, _
 from ..hooks import post_init_hook
 
@@ -13,6 +12,7 @@ _logger = logging.getLogger(__name__)
 DEFAULT_API_ENDPOINT = 'https://odashboard.app'
 API_TIMEOUT = 10
 REQUEST_TIMEOUT = 30
+
 
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
@@ -30,31 +30,24 @@ class ResConfigSettings(models.TransientModel):
     @api.model
     def get_values(self):
         res = super(ResConfigSettings, self).get_values()
-        
+
         uuid_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
         if not uuid_param:
             uuid_param = str(uuid.uuid4())
             self.env['ir.config_parameter'].sudo().set_param('odashboard.uuid', uuid_param)
-        
+
         engine = self.env['odash.engine'].sudo()._get_single_record()
 
         res.update({
             'odashboard_uuid': uuid_param,
             'odashboard_engine_version': engine.version,
         })
-        
+
         return res
-        
+
     def action_check_engine_updates(self):
         """Check update for Odashboard engine"""
-        engine = self.env['odash.engine'].search([], limit=1)
-        if not engine:
-            engine = self.env['odash.engine'].create([{
-                'name': 'Dashboard Engine',
-                'version': '0.0.0',
-                'code': False,
-                'previous_code': False,
-            }])
+        engine = self.env['odash.engine']._get_single_record()
         result = engine.check_for_updates()
 
         if result:
@@ -82,7 +75,7 @@ class ResConfigSettings(models.TransientModel):
 
     def synchronize_key(self):
         """Synchronize the key with the license server"""
-        
+
         # Automatically save the configuration settings first
         self.set_values()
 
@@ -118,25 +111,13 @@ class ResConfigSettings(models.TransientModel):
                 result = response.json().get('result')
 
                 if result.get('valid'):
-                    if result.get('already_linked') and result.get('linked_uuid') != self.odashboard_uuid:
-                        return {
-                            'type': 'ir.actions.client',
-                            'tag': 'display_notification',
-                            'params': {
-                                'title': _('Error'),
-                                'message': _('Key already used.'),
-                                'type': 'danger',
-                                'sticky': False,
-                            }
-                        }
-                    else:
-                        self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', True)
-                        self.env["odash.dashboard"].sudo().update_auth_token()
-                        
-                        return {
-                            'type': 'ir.actions.client',
-                            'tag': 'reload',
-                        }
+                    self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', True)
+                    self.env["odash.dashboard"].sudo().update_auth_token()
+
+                    return {
+                        'type': 'ir.actions.client',
+                        'tag': 'reload',
+                    }
                 else:
                     return {
                         'type': 'ir.actions.client',
@@ -215,7 +196,7 @@ class ResConfigSettings(models.TransientModel):
             'tag': 'reload',
         }
 
-    def set_demo_key(self):
+    def get_my_key(self):
         """
         Call the post_init_hook to create and sync a demo key
         """
