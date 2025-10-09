@@ -61,6 +61,11 @@ No coding required - just install and start building!
             'odashboard/static/src/xml/odash_iframe_widget.xml'
         ],
     },
+    'images': [
+        'static/description/banner.png',
+        'static/description/icon.png',
+        'static/description/youtube-link.png',
+    ],
     'license': 'OPL-1',
     'application': True,
     'installable': True,

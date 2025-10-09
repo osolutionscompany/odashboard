@@ -43,9 +43,8 @@
             display: inline-block;
             width: 100%;
             border-radius: 24px;
-            padding: 20px;
+            padding: 24px;
             overflow: hidden;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
         }
         
         .video-container::before {
@@ -67,31 +66,11 @@
             position: relative;
             width: 100%;
             height: 0;
-            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            padding-bottom: 60%; /* 16:9 aspect ratio */
             border-radius: 12px;
             overflow: hidden;
         }
         
-        .video-poster {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: url('img/wallpaper-video.png');
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            border-radius: 12px;
-            cursor: pointer;
-            z-index: 2;
-            transition: opacity 0.3s ease;
-        }
-        
-        .video-poster.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
         
         .hero_wallpaper {
             position: absolute;
@@ -101,64 +80,8 @@
             height: 100%;
             border: none;
             border-radius: 12px;
-            z-index: 1;
         }
         
-        .video-controls {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 10;
-            transition: opacity 0.3s ease;
-        }
-        
-        .btn-video-control {
-            background: rgba(255, 255, 255, 0.9);
-            border: 2px solid #875A7B;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-        
-        .btn-video-control:hover {
-            background: rgba(135, 90, 123, 0.1);
-            border-color: #6a4c93;
-            transform: scale(1.05);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
-        }
-        
-        .btn-video-control:focus {
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(135, 90, 123, 0.3);
-        }
-        
-        .play-icon {
-            color: #875A7B;
-            transition: color 0.3s ease;
-        }
-        
-        .btn-video-control:hover .play-icon {
-            color: #6a4c93;
-        }
-        
-        /* Video playing state */
-        .video-playing .video-controls {
-            opacity: 0;
-            pointer-events: none;
-        }
-        
-        .video-playing .video-container:hover .video-controls {
-            opacity: 1;
-            pointer-events: auto;
-        }
         
         @media (max-width: 768px) {
             .container {
@@ -174,11 +97,6 @@
             .video-container {
                 padding: 15px;
             }
-            
-            .btn-video-control {
-                width: 50px;
-                height: 50px;
-            }
         }
     </style>
 </head>
@@ -191,58 +109,14 @@
         <br/>
         <div class="video-container">
             <div class="video-wrapper">
-                <div class="video-poster" id="videoPoster"></div>
-                <iframe id="heroVideo"
-                        src="https://player.vimeo.com/video/1125872695?badge=0&autopause=0&controls=1&title=0&byline=0&portrait=0&speed=0&transparent=0&gesture=media&playsinline=1&keyboard=0"
-                        frameborder="0"
-                        allow="autoplay; fullscreen; picture-in-picture; clipboard-write"
-                        title="Odashboard Demo"
-                        class="hero_wallpaper">
-                </iframe>
-            </div>
-            <div class="video-controls">
-                <button id="playBtn" class="btn-video-control" type="button">
-                    <svg class="play-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M8 5V19L19 12L8 5Z" fill="currentColor"/>
-                    </svg>
-                </button>
+                <a href="https://youtu.be/8bpyYbYPUno" target="_blank" rel="noopener">
+                    <img src="youtube-link.png"
+                         alt="Watch Odashboard Demo Video" 
+                         style="width: 100%; height: auto; border-radius: 12px; cursor: pointer;">
+                </a>
             </div>
         </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const playBtn = document.getElementById('playBtn');
-            const videoPoster = document.getElementById('videoPoster');
-            const iframe = document.getElementById('heroVideo');
-
-            if (playBtn && videoPoster && iframe) {
-                // Handle play button click
-                playBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-
-                    // Hide the poster image
-                    videoPoster.classList.add('hidden');
-
-                    // Hide the play button
-                    playBtn.style.display = 'none';
-
-                    // Reload iframe with autoplay to start the video
-                    const currentSrc = iframe.src;
-                    if (!currentSrc.includes('autoplay=1')) {
-                        iframe.src = currentSrc + '&autoplay=1';
-                    }
-                });
-
-                // Also handle click on poster image
-                videoPoster.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    playBtn.click();
-                });
-            }
-        });
-    </script>
 </body>
 </html>
