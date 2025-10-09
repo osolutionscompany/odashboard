@@ -21,7 +21,7 @@ class ResConfigSettings(models.TransientModel):
     odashboard_key = fields.Char(string="Odashboard Key", config_parameter="odashboard.key")
     odashboard_key_synchronized = fields.Boolean(string="Key Synchronized",
                                                  config_parameter="odashboard.key_synchronized", readonly=True)
-    odashboard_uuid = fields.Char(string="Instance UUID", config_parameter="odashboard.uuid", readonly=True)
+    odashboard_uuid = fields.Char(string="Odashboard UUID", config_parameter="odashboard.uuid", readonly=True)
     odashboard_engine_version = fields.Char(string="Current Engine Version", readonly=True)
 
     def set_values(self):
