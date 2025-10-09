@@ -1,8 +1,8 @@
 {
-    'name': 'Odashboard',
+    'name': "O'Dashboard",
     'version': '17.0.0.0.1',
     'category': 'Dashboard',
-    'summary': 'Odoo dashboard application',
+    'summary': 'Advanced business intelligence dashboards with drag-and-drop interface, real-time analytics, and role-based access control for Odoo data visualization and reporting.',
     'description': """
        Advanced Dashboard Solution for Odoo
 
@@ -23,6 +23,7 @@ No coding required - just install and start building!
 
     """,
     'author': "O'Solutions Company",
+    'website': 'https://odashboard.app',
     'depends': [
         'base',
         'web',
