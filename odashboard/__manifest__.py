@@ -1,10 +1,26 @@
 {
     'name': 'Odashboard',
-    'version': '1.0',
+    'version': '18.0.0.1',
     'category': 'Dashboard',
     'summary': 'Odoo dashboard application',
     'description': """
-        This module provides dashboard for Odoo.:
+       Advanced Dashboard Solution for Odoo
+
+Create powerful, interactive dashboards with a simple drag and drop system.
+
+Key Features:
+- Drag & Drop Dashboard Builder
+- Real-time Data Visualization  
+- Multiple Chart Types (bar, line, pie, gauge)
+- Dynamic Filters and Live Data
+- Multi-user Support and Sharing
+- Custom Themes and Branding
+- PDF Export Capabilities
+- Security Groups Integration
+
+Perfect for business intelligence, KPIs monitoring, and data analysis.
+No coding required - just install and start building!
+
     """,
     'author': 'OSolutions',
     'depends': [
@@ -45,7 +61,7 @@
             'odashboard/static/src/xml/odash_iframe_widget.xml'
         ],
     },
-    'license': 'Other proprietary',
+    'license': 'OPL-1',
     'application': True,
     'installable': True,
     'auto_install': False,
