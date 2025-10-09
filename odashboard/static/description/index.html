@@ -81,7 +81,6 @@
             height: 100%;
             border: none;
             border-radius: 12px;
-            z-index: 1;
         }
         
         
@@ -109,22 +108,20 @@
         <h3>A video is more interesting than a long text. <br/>Discover our fabulous app by watching our demo video! <br/> More information about Odashboard on our website : <a href="https://odashboard.app">https://odashboard.app</a></h3>
         <hr/>
         <br/>
-        <iframe src="https://www.youtube.com/embed/8bpyYbYPUno"
-                        frameborder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowfullscreen
-                        title="Odashboard Demo"
-                        class="hero_wallpaper">
-                </iframe>
         <div class="video-container">
             <div class="video-wrapper">
-                <iframe src="https://www.youtube.com/embed/8bpyYbYPUno"
-                        frameborder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowfullscreen
-                        title="Odashboard Demo"
-                        class="hero_wallpaper">
-                </iframe>
+                <a href="https://youtu.be/8bpyYbYPUno" target="_blank" rel="noopener" style="display: block; position: relative;">
+                    <img src="img/wallpaper-video.png" 
+                         alt="Odashboard Demo Video" 
+                         style="width: 100%; height: auto; border-radius: 12px; cursor: pointer;">
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                                background: rgba(0,0,0,0.7); border-radius: 50%; width: 80px; height: 80px; 
+                                display: flex; align-items: center; justify-content: center;">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="white">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                    </div>
+                </a>
             </div>
         </div>
     </div>
