@@ -20,9 +20,16 @@ class OdashConfig(models.Model):
     is_page_config = fields.Boolean(string='Is Page Config', default=False)
     config_id = fields.Char(string='Config ID')
     config = fields.Json(string='Config')
+    
+    category_id = fields.Many2one(
+        comodel_name='odash.category',
+        string='Category',
+        ondelete='set null',
+        help="Category for organizing dashboard pages"
+    )
 
-    security_group_ids = fields.Many2many('odash.security.group', string='Security Groups')
-    user_ids = fields.Many2many('res.users', string='Users', domain=[('share', '=', False)])
+    security_group_ids = fields.Many2many(comodel_name='odash.security.group', string='Security Groups')
+    user_ids = fields.Many2many(comodel_name='res.users', string='Users', domain=[('share', '=', False)])
 
     access_token = fields.Char(string='Access token', default=lambda self: uuid.uuid4())
     secret_access_token = fields.Char(string='Secret Access token', default=lambda self: uuid.uuid4())
@@ -63,45 +70,55 @@ class OdashConfig(models.Model):
                 users_from_groups = record.security_group_ids.mapped('user_ids')
                 record.access_summary = f"Custom access: {len(record.security_group_ids)} groups ({len(users_from_groups)} distinct users), {len(record.user_ids)} directly assigned users"
 
+    # def action_export_configs(self):
+    #     """Export all dashboard configurations to a JSON file"""
+    #     configs = self.search([])
+    #     export_data = {
+    #         'export_date': datetime.now().isoformat(),
+    #         'odoo_version': self.env['ir.module.module'].sudo().search([('name', '=', 'base')]).latest_version,
+    #         'odashboard_version': self.env['ir.module.module'].sudo().search([('name', '=', 'odashboard')]).latest_version,
+    #         'configs': []
+    #     }
+    #
+    #     for config in configs:
+    #         config_data = {
+    #             'name': config.name,
+    #             'sequence': config.sequence,
+    #             'is_page_config': config.is_page_config,
+    #             'config_id': config.config_id,
+    #             'config': config.config,
+    #             'security_groups': config.security_group_ids.mapped('name'),
+    #             'users': config.user_ids.mapped('login'),
+    #         }
+    #         export_data['configs'].append(config_data)
+    #
+    #     # Create attachment with the export data
+    #     json_data = json.dumps(export_data, indent=2, ensure_ascii=False)
+    #     filename = f"odashboard_config_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    #
+    #     attachment = self.env['ir.attachment'].create({
+    #         'name': filename,
+    #         'type': 'binary',
+    #         'datas': base64.b64encode(json_data.encode('utf-8')),
+    #         'res_model': 'odash.config',
+    #         'res_id': 0,
+    #         'mimetype': 'application/json',
+    #     })
+    #
+    #     return {
+    #         'type': 'ir.actions.act_url',
+    #         'url': f'/web/content/{attachment.id}?download=true',
+    #         'target': 'self',
+    #     }
+
     def action_export_configs(self):
-        """Export all dashboard configurations to a JSON file"""
-        configs = self.search([])
-        export_data = {
-            'export_date': datetime.now().isoformat(),
-            'odoo_version': self.env['ir.module.module'].sudo().search([('name', '=', 'base')]).latest_version,
-            'odashboard_version': self.env['ir.module.module'].sudo().search([('name', '=', 'odashboard')]).latest_version,
-            'configs': []
-        }
-        
-        for config in configs:
-            config_data = {
-                'name': config.name,
-                'sequence': config.sequence,
-                'is_page_config': config.is_page_config,
-                'config_id': config.config_id,
-                'config': config.config,
-                'security_groups': config.security_group_ids.mapped('name'),
-                'users': config.user_ids.mapped('login'),
-            }
-            export_data['configs'].append(config_data)
-        
-        # Create attachment with the export data
-        json_data = json.dumps(export_data, indent=2, ensure_ascii=False)
-        filename = f"odashboard_config_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        
-        attachment = self.env['ir.attachment'].create({
-            'name': filename,
-            'type': 'binary',
-            'datas': base64.b64encode(json_data.encode('utf-8')),
-            'res_model': 'odash.config',
-            'res_id': 0,
-            'mimetype': 'application/json',
-        })
-        
+        """Open wizard for exporting dashboard configurations"""
         return {
-            'type': 'ir.actions.act_url',
-            'url': f'/web/content/{attachment.id}?download=true',
-            'target': 'self',
+            'name': _('Export Dashboard Configurations'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'odash.config.export.wizard',
+            'view_mode': 'form',
+            'target': 'new',
         }
 
     def action_import_configs(self):
@@ -112,5 +129,4 @@ class OdashConfig(models.Model):
             'res_model': 'odash.config.import.wizard',
             'view_mode': 'form',
             'target': 'new',
-            'context': {'default_config_model': self._name},
         }

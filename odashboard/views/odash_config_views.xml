@@ -3,13 +3,32 @@
         <field name="name">odash.config.list</field>
         <field name="model">odash.config</field>
         <field name="arch" type="xml">
-            <list string="Configurations" create="0">
+            <list string="Configurations" create="0" multi_edit="1">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
+                <field name="category_id" optional="show"/>
                 <field name="access_summary"/>
                 <field name="allow_public_access" widget="boolean_toggle" />
                 <field name="public_url" widget="CopyClipboardURL" width="200px" />
             </list>
+        </field>
+    </record>
+
+    <record id="view_odash_config_search" model="ir.ui.view">
+        <field name="name">odash.config.search</field>
+        <field name="model">odash.config</field>
+        <field name="arch" type="xml">
+            <search string="Pages">
+                <field name="name" string="Page" filter_domain="[('name', 'ilike', self)]"/>
+                <field name="category_id"/>
+                <separator/>
+                <filter string="Public Access" name="public_access" domain="[('allow_public_access', '=', True)]"/>
+                <separator/>
+                <filter string="Uncategorized" name="uncategorized" domain="[('category_id', '=', False)]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Category" name="group_category" context="{'group_by': 'category_id'}"/>
+                </group>
+            </search>
         </field>
     </record>
 
@@ -20,10 +39,15 @@
             <form string="Configuration">
                 <sheet>
                     <group>
-                        <field name="name"/>
-                        <field name="public_url" invisible="not allow_public_access" widget="CopyClipboardURL" />
-                        <field name="allow_public_access" widget="boolean_toggle" />
-                        <field name="access_summary" />
+                        <group>
+                            <field name="name"/>
+                            <field name="category_id"/>
+                        </group>
+                        <group>
+                            <field name="allow_public_access" widget="boolean_toggle" />
+                            <field name="public_url" invisible="not allow_public_access" widget="CopyClipboardURL" />
+                            <field name="access_summary" />
+                        </group>
                     </group>
                     <notebook>
                         <page name="Security groups">

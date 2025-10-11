@@ -2,6 +2,9 @@ from odoo import models, fields, api, _, tools
 import logging
 import requests
 import ast
+import hashlib
+
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -10,9 +13,11 @@ class DashboardEngine(models.Model):
     """
     This model manages the Odashboard visualization engine code and its updates.
     It can automatically check for updates on GitHub and apply them when available.
+    Singleton pattern enforced via create() method override.
     """
     _name = 'odash.engine'
     _description = 'Dashboard Engine'
+    _order = 'create_date desc'
 
     name = fields.Char(string='Name', default='Dashboard Engine', readonly=True)
     version = fields.Char(string='Version', default='1.0.0', readonly=True)
@@ -28,7 +33,7 @@ class DashboardEngine(models.Model):
         """Get the base URL for GitHub repository."""
         return self.env['ir.config_parameter'].sudo().get_param(
             'odashboard.github_base_url', 
-            'https://raw.githubusercontent.com/Notdoo/odashboard.engine/main/'
+            'https://raw.githubusercontent.com/osolutionscompany/odashboard.engine/main/'
         )
     @api.model
     def _get_versions_url(self):
@@ -38,17 +43,47 @@ class DashboardEngine(models.Model):
 
     @api.model
     def _get_single_record(self):
-        """Get or create the single engine record."""
+        """Get or create the single engine record with proper locking.
+
+        Handles race conditions using double-checked locking.
+        Assumes PostgreSQL backend; falls back to simple creation if not.
+        """
+        # First, try a simple search (no lock needed for reads)
         engine = self.search([], limit=1)
-        if not engine:
-            engine = self.create([{
+        if engine:
+            return engine
+
+        # Generate a unique lock ID based on model name to avoid collisions
+        lock_id = int(hashlib.sha256(self._name.encode()).hexdigest()[:10], 16)  # Truncate to fit int64
+
+        # Only use locking when we need to create
+        try:
+            if self.env.cr.dbname.startswith('postgres'):  # Rough check for PostgreSQL
+                # Acquire advisory lock
+                self.env.cr.execute("SELECT pg_advisory_xact_lock(%s)", (lock_id,))
+
+            # Double-check after acquiring lock (if applicable)
+            engine = self.search([], limit=1)
+            if engine:
+                return engine
+
+            # Safe to create now
+            engine = self.create({
                 'name': 'Dashboard Engine',
                 'version': '0.0.0',
                 'code': False,
                 'previous_code': False,
-            }])
+            })
             engine.check_for_updates()
-        return engine
+            return engine
+
+        except Exception as e:
+            _logger.error(f"Error in _get_single_record: {str(e)}", exc_info=True)
+            # Fallback: one more search attempt
+            engine = self.search([], limit=1)
+            if engine:
+                return engine
+            raise ValueError("Failed to get or create engine record") from e  # Wrap with more context
 
     def _add_to_log(self, message):
         """Add a timestamped message to the update log."""
@@ -394,3 +429,17 @@ class DashboardEngine(models.Model):
                 'success': True,
                 'data': result
             }
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Override create to enforce singleton pattern."""
+        existing = self.search([], limit=1)
+        if existing:
+            raise ValidationError(_(
+                'Cannot create Dashboard Engine record. '
+                'Only one engine record is allowed and one already exists (ID: %s). '
+                'Use _get_single_record() method instead.'
+            ) % existing.id)
+        if len(vals_list) > 1:
+            raise ValidationError(_("Only one Dashboard Engine record can be created at a time"))
+        return super(DashboardEngine, self).create(vals_list)
