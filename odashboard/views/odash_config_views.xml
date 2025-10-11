@@ -25,7 +25,7 @@
                 <filter string="Public Access" name="public_access" domain="[('allow_public_access', '=', True)]"/>
                 <separator/>
                 <filter string="Uncategorized" name="uncategorized" domain="[('category_id', '=', False)]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Category" name="group_category" context="{'group_by': 'category_id'}"/>
                 </group>
             </search>

@@ -158,7 +158,7 @@
                     <filter string="Due Soon" name="due_soon"
                             domain="[('next_send_date', '&lt;=', (context_today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d 23:59:59'))]"/>
 
-                    <group expand="0" string="Group By">
+                    <group>
                         <filter string="Period" name="group_period" context="{'group_by': 'period'}"/>
                         <filter string="Status" name="group_status" context="{'group_by': 'last_execution_status'}"/>
                         <filter string="Active" name="group_active" context="{'group_by': 'active'}"/>

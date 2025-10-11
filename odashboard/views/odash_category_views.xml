@@ -89,7 +89,7 @@
                 <separator/>
                 <filter string="With Pages" name="with_pages" domain="[('page_count', '>', 0)]"/>
                 <filter string="Empty" name="empty" domain="[('page_count', '=', 0)]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Active Status" name="group_active" context="{'group_by': 'active'}"/>
                 </group>
             </search>

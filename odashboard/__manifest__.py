@@ -1,6 +1,6 @@
 {
     'name': "O'Dashboard",
-    'version': '18.0.0.1.0',
+    'version': '19.0.0.0.0',
     'category': 'Dashboard',
     'summary': 'Advanced business intelligence dashboards with drag-and-drop interface, real-time analytics, and role-based access control for Odoo data visualization and reporting.',
     'description': """
