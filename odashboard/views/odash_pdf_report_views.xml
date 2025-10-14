@@ -221,7 +221,7 @@
                                 </div>
                             </div>
                         </t>
-                        <t t-name="card">
+                        <t t-name="kanban-box">
                             <div t-attf-class="oe_kanban_card oe_kanban_global_click o_kanban_record_has_image_fill #{!record.active.raw_value ? 'o_kanban_color_2' : ''}">
                                 <!-- Status indicator strip -->
                                 <div class="o_kanban_image_fill_left d-flex align-items-center justify-content-center"
