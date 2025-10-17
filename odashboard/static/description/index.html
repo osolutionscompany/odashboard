@@ -4,661 +4,323 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Odashboard - Live Analytics Dashboards for Odoo</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             color: #2c3e50;
-            background: #ffffff;
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 20px;
-        }
-
-        /* Hero Section */
         .hero {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 80px 0;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .hero::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: url('data:image/svg+xml,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="none"/><circle cx="50" cy="50" r="40" fill="rgba(255,255,255,0.05)"/></svg>');
-            opacity: 0.3;
-        }
-
-        .hero-content {
-            position: relative;
-            z-index: 1;
-        }
-
-        .hero h1 {
-            font-size: 3.5rem;
-            font-weight: 800;
-            margin-bottom: 20px;
-            line-height: 1.2;
-        }
-
-        .hero p {
-            font-size: 1.3rem;
-            margin-bottom: 30px;
-            opacity: 0.95;
-            max-width: 700px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .badge {
-            display: inline-block;
-            background: rgba(255,255,255,0.2);
-            padding: 8px 20px;
-            border-radius: 50px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            margin-bottom: 20px;
-            backdrop-filter: blur(10px);
-        }
-
-        /* Feature Grid */
-        .features-section {
-            padding: 80px 0;
-            background: #f8f9fa;
-        }
-
-        .section-title {
-            text-align: center;
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 15px;
-            color: #1a202c;
-        }
-
-        .section-subtitle {
-            text-align: center;
-            font-size: 1.1rem;
-            color: #718096;
-            margin-bottom: 60px;
-            max-width: 600px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-            margin-bottom: 40px;
-        }
-
-        .feature-card {
-            background: white;
-            padding: 35px;
-            border-radius: 16px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.07);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            border: 1px solid #e2e8f0;
-        }
-
-        .feature-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+            padding-top: 80px;
+            padding-bottom: 80px;
         }
 
         .feature-icon {
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 20px;
-            font-size: 1.8rem;
-        }
-
-        .feature-card h3 {
-            font-size: 1.4rem;
-            margin-bottom: 12px;
-            color: #1a202c;
-            font-weight: 600;
-        }
-
-        .feature-card p {
-            color: #4a5568;
-            line-height: 1.7;
-        }
-
-        /* Benefits Section */
-        .benefits-section {
-            padding: 80px 0;
-            background: white;
-        }
-
-        .benefits-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 40px;
-            margin-top: 50px;
-        }
-
-        .benefit-item {
-            text-align: center;
+            font-size: 3rem;
+            margin-bottom: 15px;
         }
 
         .benefit-number {
             font-size: 3rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
             margin-bottom: 10px;
-        }
-
-        .benefit-item h4 {
-            font-size: 1.2rem;
-            margin-bottom: 10px;
-            color: #1a202c;
-        }
-
-        .benefit-item p {
-            color: #718096;
-        }
-
-        /* Use Cases Section */
-        .usecases-section {
-            padding: 80px 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .usecases-section .section-title {
-            color: white;
-        }
-
-        .usecases-section .section-subtitle {
-            color: white;
-            opacity: 0.95;
-        }
-
-        .usecases-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 25px;
-            margin-top: 50px;
-        }
-
-        .usecase-card {
-            background: rgba(255,255,255,0.15);
-            backdrop-filter: blur(10px);
-            padding: 30px;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-
-        .usecase-card h4 {
-            font-size: 1.3rem;
-            margin-bottom: 12px;
-            font-weight: 600;
-        }
-
-        .usecase-card ul {
-            list-style: none;
-            padding: 0;
-        }
-
-        .usecase-card li {
-            padding: 8px 0;
-            padding-left: 25px;
-            position: relative;
-        }
-
-        .usecase-card li::before {
-            content: "✓";
-            position: absolute;
-            left: 0;
-            font-weight: bold;
-        }
-
-        /* Video in Hero */
-        .video-container {
-            max-width: 800px;
-            margin: 40px auto 0 auto;
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            position: relative;
         }
 
         .video-wrapper {
-            position: relative;
-            padding-bottom: 56.25%;
-            height: 0;
-        }
-
-        .video-wrapper img,
-        .video-wrapper iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none;
+            border-radius: 16px;
+            margin-top: 40px;
+            margin-bottom: 20px;
         }
 
         .video-wrapper img {
-            cursor: pointer;
-            transition: opacity 0.3s ease;
+            border-radius: 16px;
         }
 
-        .video-wrapper img:hover {
-            opacity: 0.9;
-        }
-
-        .video-info {
-            text-align: center;
-            margin-top: 20px;
+        .usecases-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            font-size: 1rem;
-            opacity: 0.95;
         }
 
-        .video-info a {
-            color: white;
-            text-decoration: underline;
-            font-weight: 600;
-        }
-
-        .video-info a:hover {
-            opacity: 0.8;
-        }
-
-        /* Security Section */
-        .security-section {
-            padding: 80px 0;
-            background: white;
-        }
-
-        .security-features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 30px;
-            margin-top: 50px;
-        }
-
-        .security-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 20px;
-        }
-
-        .security-icon {
-            width: 50px;
-            height: 50px;
-            background: #edf2f7;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            font-size: 1.5rem;
-        }
-
-        .security-item h4 {
-            color: #1a202c;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-
-        .security-item p {
-            color: #718096;
-            font-size: 0.95rem;
-        }
-
-        /* Stats Section */
         .stats-section {
-            padding: 60px 0;
-            background: #1a202c;
+            background-color: #1a202c;
             color: white;
         }
 
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 40px;
-            text-align: center;
-        }
-
-        .stat-item h3 {
-            font-size: 2.5rem;
-            font-weight: 800;
-            margin-bottom: 5px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .stat-item p {
-            color: #a0aec0;
-        }
-
-        /* CTA Section */
         .cta-section {
-            padding: 80px 0;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            text-align: center;
-        }
-
-        .cta-section h2 {
-            font-size: 2.5rem;
-            margin-bottom: 20px;
-            font-weight: 700;
-        }
-
-        .cta-section p {
-            font-size: 1.2rem;
-            margin-bottom: 30px;
-            opacity: 0.95;
-        }
-
-        .cta-button {
-            display: inline-block;
-            background: white;
-            color: #667eea;
-            padding: 15px 40px;
-            border-radius: 50px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 1.1rem;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .cta-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .hero h1 {
-                font-size: 2.2rem;
-            }
-
-            .hero p {
-                font-size: 1.1rem;
-            }
-
-            .section-title {
-                font-size: 2rem;
-            }
-
-            .features-grid,
-            .benefits-grid,
-            .usecases-grid,
-            .security-features {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        /* Highlight boxes */
-        .highlight-box {
-            background: #f0f4ff;
-            border-left: 4px solid #667eea;
-            padding: 20px;
-            margin: 30px 0;
-            border-radius: 8px;
-        }
-
-        .highlight-box h4 {
-            color: #667eea;
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-
-        .highlight-box p {
-            color: #4a5568;
         }
     </style>
 </head>
 <body>
     <!-- Hero Section -->
-    <section class="hero">
+    <section class="hero text-center">
         <div class="container">
-            <div class="hero-content">
-                <div class="badge">🚀 No Code Required</div>
-                <h1>Live Analytics Dashboards<br/>Made Simple</h1>
-                <p>Create beautiful, real-time dashboards in Odoo without coding or complex setup. Drag, drop, and visualize your data instantly.</p>
+            <div class="badge badge-light mb-3" style="font-size: 0.9rem; padding: 8px 20px;">🚀 No Code Required</div>
+            <h1 class="display-3 font-weight-bold mb-4">Live Analytics Dashboards<br/>Made Simple</h1>
+            <p class="lead mb-4" style="font-size: 1.3rem; max-width: 700px; margin-left: auto; margin-right: auto;">Create beautiful, real-time dashboards in Odoo without coding or complex setup. Drag, drop, and visualize your data instantly.</p>
 
-                <!-- Video -->
-                <div class="video-container">
-                    <div class="video-wrapper">
-                        <a href="https://youtu.be/8bpyYbYPUno" target="_blank" rel="noopener">
-                            <img src="youtube-link.png" alt="Odashboard Demo Video - Click to Watch" style="object-fit: fill;">
-                        </a>
-                    </div>
-                </div>
-                <p class="video-info">
-                    🎥 Watch the full demo to discover all features •
-                    <a href="https://odashboard.app" target="_blank" rel="noopener">Visit odashboard.app</a>
-                </p>
+            <!-- Video -->
+            <div class="video-wrapper" style="max-width: 800px; margin-left: auto; margin-right: auto;">
+                <a href="https://youtu.be/8bpyYbYPUno" target="_blank" rel="noopener">
+                    <img src="youtube-link.png" alt="Odashboard Demo Video - Click to Watch" class="img-fluid" style="border: 3px solid white;">
+                </a>
             </div>
+            <p style="font-size: 1rem; margin-top: 20px;">
+                🎥 Watch the full demo to discover all features
+            </p>
         </div>
     </section>
 
     <!-- Features Section -->
-    <section class="features-section">
+    <section class="py-5" style="background-color: #f8f9fa;">
         <div class="container">
-            <h2 class="section-title">Powerful Features, Zero Complexity</h2>
-            <p class="section-subtitle">Everything you need to transform your Odoo data into actionable insights</p>
+            <h2 class="text-center font-weight-bold mb-3" style="font-size: 2.5rem; color: #1a202c;">Powerful Features, Zero Complexity</h2>
+            <p class="text-center mb-5" style="font-size: 1.1rem; color: #718096; max-width: 600px; margin-left: auto; margin-right: auto;">Everything you need to transform your Odoo data into actionable insights</p>
 
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">🎨</div>
-                    <h3>Drag & Drop Builder</h3>
-                    <p>Build professional dashboards in minutes with our intuitive drag-and-drop interface. No technical skills required.</p>
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100" style="border-radius: 16px; border: 1px solid #e2e8f0;">
+                        <div class="card-body" style="padding: 35px;">
+                            <div class="feature-icon">🎨</div>
+                            <h3 class="font-weight-bold mb-3" style="font-size: 1.4rem; color: #1a202c;">Drag & Drop Builder</h3>
+                            <p style="color: #4a5568;">Build professional dashboards in minutes with our intuitive drag-and-drop interface. No technical skills required.</p>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3>Real-Time Data Sync</h3>
-                    <p>Your dashboards automatically update with live data from your Odoo database. Always current, always accurate.</p>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100" style="border-radius: 16px; border: 1px solid #e2e8f0;">
+                        <div class="card-body" style="padding: 35px;">
+                            <div class="feature-icon">⚡</div>
+                            <h3 class="font-weight-bold mb-3" style="font-size: 1.4rem; color: #1a202c;">Real-Time Data Sync</h3>
+                            <p style="color: #4a5568;">Your dashboards automatically update with live data from your Odoo database. Always current, always accurate.</p>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">🎯</div>
-                    <h3>Fully Customizable</h3>
-                    <p>Adapt every dashboard to your specific business needs. Choose from multiple visualization types and layouts.</p>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100" style="border-radius: 16px; border: 1px solid #e2e8f0;">
+                        <div class="card-body" style="padding: 35px;">
+                            <div class="feature-icon">🎯</div>
+                            <h3 class="font-weight-bold mb-3" style="font-size: 1.4rem; color: #1a202c;">Fully Customizable</h3>
+                            <p style="color: #4a5568;">Adapt every dashboard to your specific business needs. Choose from multiple visualization types and layouts.</p>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">🔒</div>
-                    <h3>Enterprise Security</h3>
-                    <p>Bank-level encryption, GDPR compliance, and granular access controls keep your data safe and secure.</p>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100" style="border-radius: 16px; border: 1px solid #e2e8f0;">
+                        <div class="card-body" style="padding: 35px;">
+                            <div class="feature-icon">🔒</div>
+                            <h3 class="font-weight-bold mb-3" style="font-size: 1.4rem; color: #1a202c;">Enterprise Security</h3>
+                            <p style="color: #4a5568;">Bank-level encryption, GDPR compliance, and granular access controls keep your data safe and secure.</p>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">📊</div>
-                    <h3>Rich Visualizations</h3>
-                    <p>Display your data with charts, graphs, tables, KPI blocks, and more. Make data beautiful and understandable.</p>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100" style="border-radius: 16px; border: 1px solid #e2e8f0;">
+                        <div class="card-body" style="padding: 35px;">
+                            <div class="feature-icon">📊</div>
+                            <h3 class="font-weight-bold mb-3" style="font-size: 1.4rem; color: #1a202c;">Rich Visualizations</h3>
+                            <p style="color: #4a5568;">Display your data with charts, graphs, tables, KPI blocks, and more. Make data beautiful and understandable.</p>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="feature-card">
-                    <div class="feature-icon">🌐</div>
-                    <h3>Share & Collaborate</h3>
-                    <p>Share dashboards with your team or clients. Control permissions and keep everyone on the same page.</p>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100" style="border-radius: 16px; border: 1px solid #e2e8f0;">
+                        <div class="card-body" style="padding: 35px;">
+                            <div class="feature-icon">🌐</div>
+                            <h3 class="font-weight-bold mb-3" style="font-size: 1.4rem; color: #1a202c;">Share & Collaborate</h3>
+                            <p style="color: #4a5568;">Share dashboards with your team or clients. Control permissions and keep everyone on the same page.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="highlight-box">
-                <h4>💡 Built for Odoo Users</h4>
-                <p>Odashboard is designed specifically for Odoo, ensuring seamless integration with all your modules - from Sales and CRM to Inventory, Accounting, and beyond.</p>
+            <div class="alert alert-info mt-4" style="border-left: 4px solid #667eea; border-radius: 8px;">
+                <h4 class="font-weight-bold" style="color: #667eea;">💡 Built for Odoo Users</h4>
+                <p class="mb-0" style="color: #4a5568;">Odashboard is designed specifically for Odoo, ensuring seamless integration with all your modules - from Sales and CRM to Inventory, Accounting, and beyond.</p>
             </div>
         </div>
     </section>
 
     <!-- Benefits Section -->
-    <section class="benefits-section">
+    <section class="py-5 bg-white">
         <div class="container">
-            <h2 class="section-title">Why Choose Odashboard?</h2>
-            <p class="section-subtitle">Stop exporting data to spreadsheets. Start making decisions with live insights.</p>
+            <h2 class="text-center font-weight-bold mb-3" style="font-size: 2.5rem; color: #1a202c;">Why Choose Odashboard?</h2>
+            <p class="text-center mb-5" style="font-size: 1.1rem; color: #718096; max-width: 600px; margin-left: auto; margin-right: auto;">Stop exporting data to spreadsheets. Start making decisions with live insights.</p>
 
-            <div class="benefits-grid">
-                <div class="benefit-item">
+            <div class="row text-center">
+                <div class="col-md-3 col-sm-6 mb-4">
                     <div class="benefit-number">⏱️</div>
-                    <h4>Save Time</h4>
-                    <p>Build dashboards in minutes, not days. No waiting for IT or developers.</p>
+                    <h4 class="font-weight-bold mb-2" style="font-size: 1.2rem; color: #1a202c;">Save Time</h4>
+                    <p style="color: #718096;">Build dashboards in minutes, not days. No waiting for IT or developers.</p>
                 </div>
 
-                <div class="benefit-item">
+                <div class="col-md-3 col-sm-6 mb-4">
                     <div class="benefit-number">💰</div>
-                    <h4>Reduce Costs</h4>
-                    <p>Eliminate expensive BI tools and manual reporting processes.</p>
+                    <h4 class="font-weight-bold mb-2" style="font-size: 1.2rem; color: #1a202c;">Reduce Costs</h4>
+                    <p style="color: #718096;">Eliminate expensive BI tools and manual reporting processes.</p>
                 </div>
 
-                <div class="benefit-item">
+                <div class="col-md-3 col-sm-6 mb-4">
                     <div class="benefit-number">📈</div>
-                    <h4>Better Decisions</h4>
-                    <p>Access real-time data to make informed business decisions faster.</p>
+                    <h4 class="font-weight-bold mb-2" style="font-size: 1.2rem; color: #1a202c;">Better Decisions</h4>
+                    <p style="color: #718096;">Access real-time data to make informed business decisions faster.</p>
                 </div>
 
-                <div class="benefit-item">
+                <div class="col-md-3 col-sm-6 mb-4">
                     <div class="benefit-number">👥</div>
-                    <h4>Empower Teams</h4>
-                    <p>Give every team member the data they need, when they need it.</p>
+                    <h4 class="font-weight-bold mb-2" style="font-size: 1.2rem; color: #1a202c;">Empower Teams</h4>
+                    <p style="color: #718096;">Give every team member the data they need, when they need it.</p>
                 </div>
             </div>
         </div>
     </section>
 
     <!-- Use Cases Section -->
-    <section class="usecases-section">
+    <section class="usecases-section py-5">
         <div class="container">
-            <h2 class="section-title">Perfect For Every Department</h2>
-            <p class="section-subtitle">From sales to operations, Odashboard helps every team succeed</p>
+            <h2 class="text-center font-weight-bold mb-3" style="font-size: 2.5rem;">Perfect For Every Department</h2>
+            <p class="text-center mb-5" style="font-size: 1.1rem;">From sales to operations, Odashboard helps every team succeed</p>
 
-            <div class="usecases-grid">
-                <div class="usecase-card">
-                    <h4>📊 Sales & CRM</h4>
-                    <ul>
-                        <li>Track revenue & pipeline</li>
-                        <li>Monitor conversion rates</li>
-                        <li>Analyze sales performance</li>
-                        <li>Forecast future revenue</li>
-                    </ul>
+            <div class="row">
+                <div class="col-md-4 col-sm-6 mb-4">
+                    <div class="card" style="background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;">
+                        <div class="card-body" style="padding: 30px;">
+                            <h4 class="font-weight-bold mb-3" style="font-size: 1.3rem;">📊 Sales & CRM</h4>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">✓ Track revenue & pipeline</li>
+                                <li class="mb-2">✓ Monitor conversion rates</li>
+                                <li class="mb-2">✓ Analyze sales performance</li>
+                                <li class="mb-2">✓ Forecast future revenue</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="usecase-card">
-                    <h4>📦 Inventory & Operations</h4>
-                    <ul>
-                        <li>Stock levels & movements</li>
-                        <li>Warehouse performance</li>
-                        <li>Supply chain metrics</li>
-                        <li>Delivery tracking</li>
-                    </ul>
+                <div class="col-md-4 col-sm-6 mb-4">
+                    <div class="card" style="background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;">
+                        <div class="card-body" style="padding: 30px;">
+                            <h4 class="font-weight-bold mb-3" style="font-size: 1.3rem;">📦 Inventory & Operations</h4>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">✓ Stock levels & movements</li>
+                                <li class="mb-2">✓ Warehouse performance</li>
+                                <li class="mb-2">✓ Supply chain metrics</li>
+                                <li class="mb-2">✓ Delivery tracking</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="usecase-card">
-                    <h4>💼 Finance & Accounting</h4>
-                    <ul>
-                        <li>Cash flow analysis</li>
-                        <li>P&L statements</li>
-                        <li>Budget vs actual</li>
-                        <li>Aged receivables/payables</li>
-                    </ul>
+                <div class="col-md-4 col-sm-6 mb-4">
+                    <div class="card" style="background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;">
+                        <div class="card-body" style="padding: 30px;">
+                            <h4 class="font-weight-bold mb-3" style="font-size: 1.3rem;">💼 Finance & Accounting</h4>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">✓ Cash flow analysis</li>
+                                <li class="mb-2">✓ P&L statements</li>
+                                <li class="mb-2">✓ Budget vs actual</li>
+                                <li class="mb-2">✓ Aged receivables/payables</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="usecase-card">
-                    <h4>🛒 E-commerce</h4>
-                    <ul>
-                        <li>Online sales tracking</li>
-                        <li>Customer behavior analysis</li>
-                        <li>Product performance</li>
-                        <li>Conversion funnels</li>
-                    </ul>
+                <div class="col-md-4 col-sm-6 mb-4">
+                    <div class="card" style="background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;">
+                        <div class="card-body" style="padding: 30px;">
+                            <h4 class="font-weight-bold mb-3" style="font-size: 1.3rem;">🛒 E-commerce</h4>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">✓ Online sales tracking</li>
+                                <li class="mb-2">✓ Customer behavior analysis</li>
+                                <li class="mb-2">✓ Product performance</li>
+                                <li class="mb-2">✓ Conversion funnels</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="usecase-card">
-                    <h4>👨‍💼 Management</h4>
-                    <ul>
-                        <li>Executive dashboards</li>
-                        <li>Company-wide KPIs</li>
-                        <li>Department performance</li>
-                        <li>Strategic insights</li>
-                    </ul>
+                <div class="col-md-4 col-sm-6 mb-4">
+                    <div class="card" style="background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;">
+                        <div class="card-body" style="padding: 30px;">
+                            <h4 class="font-weight-bold mb-3" style="font-size: 1.3rem;">👨‍💼 Management</h4>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">✓ Executive dashboards</li>
+                                <li class="mb-2">✓ Company-wide KPIs</li>
+                                <li class="mb-2">✓ Department performance</li>
+                                <li class="mb-2">✓ Strategic insights</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="usecase-card">
-                    <h4>🎯 Marketing</h4>
-                    <ul>
-                        <li>Campaign performance</li>
-                        <li>Lead generation metrics</li>
-                        <li>ROI tracking</li>
-                        <li>Customer acquisition cost</li>
-                    </ul>
+                <div class="col-md-4 col-sm-6 mb-4">
+                    <div class="card" style="background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;">
+                        <div class="card-body" style="padding: 30px;">
+                            <h4 class="font-weight-bold mb-3" style="font-size: 1.3rem;">🎯 Marketing</h4>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">✓ Campaign performance</li>
+                                <li class="mb-2">✓ Lead generation metrics</li>
+                                <li class="mb-2">✓ ROI tracking</li>
+                                <li class="mb-2">✓ Customer acquisition cost</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </section>
 
     <!-- Security Section -->
-    <section class="security-section">
+    <section class="py-5 bg-white">
         <div class="container">
-            <h2 class="section-title">Enterprise-Grade Security & Compliance</h2>
-            <p class="section-subtitle">Your data security is our top priority</p>
+            <h2 class="text-center font-weight-bold mb-3" style="font-size: 2.5rem; color: #1a202c;">Enterprise-Grade Security & Compliance</h2>
+            <p class="text-center mb-5" style="font-size: 1.1rem; color: #718096; max-width: 600px; margin-left: auto; margin-right: auto;">Your data security is our top priority</p>
 
-            <div class="security-features">
-                <div class="security-item">
-                    <div class="security-icon">🔐</div>
-                    <div>
-                        <h4>Encrypted Access</h4>
-                        <p>Bank-level encryption with secure token-based authentication for all dashboard access.</p>
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <div class="d-flex">
+                        <div class="mr-3" style="font-size: 2rem;">🔐</div>
+                        <div>
+                            <h4 class="font-weight-bold mb-2" style="color: #1a202c;">Encrypted Access</h4>
+                            <p style="color: #718096; font-size: 0.95rem;">Bank-level encryption with secure token-based authentication for all dashboard access.</p>
+                        </div>
                     </div>
                 </div>
 
-                <div class="security-item">
-                    <div class="security-icon">🛡️</div>
-                    <div>
-                        <h4>GDPR Compliant</h4>
-                        <p>Fully compliant with GDPR and international data protection regulations.</p>
+                <div class="col-md-6 mb-4">
+                    <div class="d-flex">
+                        <div class="mr-3" style="font-size: 2rem;">🛡️</div>
+                        <div>
+                            <h4 class="font-weight-bold mb-2" style="color: #1a202c;">GDPR Compliant</h4>
+                            <p style="color: #718096; font-size: 0.95rem;">Fully compliant with GDPR and international data protection regulations.</p>
+                        </div>
                     </div>
                 </div>
 
-                <div class="security-item">
-                    <div class="security-icon">👤</div>
-                    <div>
-                        <h4>Access Control</h4>
-                        <p>Granular permissions let you control exactly who sees what data.</p>
+                <div class="col-md-6 mb-4">
+                    <div class="d-flex">
+                        <div class="mr-3" style="font-size: 2rem;">👤</div>
+                        <div>
+                            <h4 class="font-weight-bold mb-2" style="color: #1a202c;">Access Control</h4>
+                            <p style="color: #718096; font-size: 0.95rem;">Granular permissions let you control exactly who sees what data.</p>
+                        </div>
                     </div>
                 </div>
 
-                <div class="security-item">
-                    <div class="security-icon">📋</div>
-                    <div>
-                        <h4>Audit Trail</h4>
-                        <p>Complete logging of all dashboard access and modifications for accountability.</p>
+                <div class="col-md-6 mb-4">
+                    <div class="d-flex">
+                        <div class="mr-3" style="font-size: 2rem;">📋</div>
+                        <div>
+                            <h4 class="font-weight-bold mb-2" style="color: #1a202c;">Audit Trail</h4>
+                            <p style="color: #718096; font-size: 0.95rem;">Complete logging of all dashboard access and modifications for accountability.</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -666,36 +328,35 @@
     </section>
 
     <!-- Stats Section -->
-    <section class="stats-section">
+    <section class="stats-section py-5">
         <div class="container">
-            <div class="stats-grid">
-                <div class="stat-item">
-                    <h3>5 min</h3>
-                    <p>Average dashboard creation time</p>
+            <div class="row text-center">
+                <div class="col-md-3 col-sm-6 mb-3">
+                    <h3 class="font-weight-bold mb-2" style="font-size: 2.5rem; color: #667eea;">5 min</h3>
+                    <p style="color: #a0aec0;">Average dashboard creation time</p>
                 </div>
-                <div class="stat-item">
-                    <h3>0</h3>
-                    <p>Lines of code required</p>
+                <div class="col-md-3 col-sm-6 mb-3">
+                    <h3 class="font-weight-bold mb-2" style="font-size: 2.5rem; color: #667eea;">0</h3>
+                    <p style="color: #a0aec0;">Lines of code required</p>
                 </div>
-                <div class="stat-item">
-                    <h3>100%</h3>
-                    <p>Real-time data sync</p>
+                <div class="col-md-3 col-sm-6 mb-3">
+                    <h3 class="font-weight-bold mb-2" style="font-size: 2.5rem; color: #667eea;">100%</h3>
+                    <p style="color: #a0aec0;">Real-time data sync</p>
                 </div>
-                <div class="stat-item">
-                    <h3>∞</h3>
-                    <p>Customization possibilities</p>
+                <div class="col-md-3 col-sm-6 mb-3">
+                    <h3 class="font-weight-bold mb-2" style="font-size: 2.5rem; color: #667eea;">∞</h3>
+                    <p style="color: #a0aec0;">Customization possibilities</p>
                 </div>
             </div>
         </div>
     </section>
 
     <!-- CTA Section -->
-    <section class="cta-section">
+    <section class="cta-section py-5 text-center">
         <div class="container">
-            <h2>Ready to Transform Your Odoo Data?</h2>
-            <p>Join hundreds of companies already using Odashboard to make better business decisions</p>
-            <a href="https://odashboard.app" class="cta-button" target="_blank">Get Started Today →</a>
-            <p style="margin-top: 20px; opacity: 0.9; font-size: 0.95rem;">
+            <h2 class="font-weight-bold mb-3" style="font-size: 2.5rem;">Ready to Transform Your Odoo Data?</h2>
+            <p class="mb-4" style="font-size: 1.2rem;">Join hundreds of companies already using Odashboard to make better business decisions</p>
+            <p style="font-size: 0.95rem; margin-top: 20px;">
                 ✓ No credit card required • ✓ Full feature access • ✓ 5-minute setup
             </p>
         </div>
