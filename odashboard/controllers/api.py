@@ -180,8 +180,16 @@ class OdashboardAPI(http.Controller):
 
     @http.route(['/api/odash/access'], type='http', auth='api_key_dashboard', csrf=False, methods=['GET'], cors="*")
     def get_access(self):
-        token = request.env['ir.config_parameter'].sudo().get_param('odashboard.api.token')
-        return ApiHelper.json_valid_response(token, 200)
+        config = request.env['ir.config_parameter'].sudo()
+        token = config.get_param('odashboard.api.token')
+        key = config.get_param('odashboard.key')
+        
+        # Return both token and key for frontend use
+        response_data = {
+            'token': token,
+            'license_key': key
+        }
+        return ApiHelper.json_valid_response(response_data, 200)
 
     @http.route(['/api/osolution/refresh-token/<string:uuid>/<string:key>'], type='http', auth='none', csrf=False,
                 methods=['GET'], cors="*")

@@ -216,7 +216,12 @@ class DashboardEngine(models.Model):
         
         # Try to execute the current code
         try:
-            shared_namespace = {}
+            # Initialize namespace with built-in globals to avoid KeyError for __name__, __builtins__, etc.
+            shared_namespace = {
+                '__builtins__': __builtins__,
+                '__name__': __name__,
+                '__file__': __file__,
+            }
             
             # Execute the code in the shared namespace
             exec(code, shared_namespace, shared_namespace)
@@ -237,8 +242,12 @@ class DashboardEngine(models.Model):
                 try:
                     _logger.info(f"Attempting fallback execution of '{method_name}'")
                     
-                    # Create a shared namespace for fallback
-                    fallback_namespace = {}
+                    # Create a shared namespace for fallback with built-in globals
+                    fallback_namespace = {
+                        '__builtins__': __builtins__,
+                        '__name__': __name__,
+                        '__file__': __file__,
+                    }
                     
                     # Execute the previous code with shared namespace
                     exec(engine.previous_code, fallback_namespace, fallback_namespace)
