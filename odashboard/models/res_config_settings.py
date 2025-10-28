@@ -47,7 +47,7 @@ class ResConfigSettings(models.TransientModel):
 
     def action_check_engine_updates(self):
         """Check update for Odashboard engine"""
-        engine = self.env['odash.engine']._get_single_record()
+        engine = self.env['odash.engine'].sudo()._get_single_record()
         result = engine.check_for_updates()
 
         if result:

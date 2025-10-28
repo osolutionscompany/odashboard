@@ -1,9 +1,9 @@
-from odoo import models, fields, api, _, tools
 import logging
 import requests
 import ast
 import hashlib
 
+from odoo import models, fields, api, _, tools
 from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
@@ -204,8 +204,10 @@ class DashboardEngine(models.Model):
         """
         Create a safe globals dictionary for code execution.
         
-        This restricts access to dangerous built-ins like __import__, open, eval, exec, etc.
-        Only safe built-in functions and necessary modules are allowed.
+        This provides a restricted namespace that:
+        - Allows whitelisted module imports only
+        - Blocks dangerous built-ins (open, eval, exec, compile)
+        - Provides safe built-in functions
         
         Returns:
             dict: Safe globals dictionary for exec()
@@ -215,9 +217,29 @@ class DashboardEngine(models.Model):
         from dateutil.relativedelta import relativedelta
         import pytz
         
+        # Whitelist of allowed modules
+        allowed_modules = {
+            'logging': logging,
+            'datetime': __import__('datetime'),
+            'pytz': pytz,
+            'dateutil.relativedelta': __import__('dateutil.relativedelta', fromlist=['relativedelta']),
+        }
+        
+        def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+            """
+            Safe import function that only allows whitelisted modules.
+            
+            This prevents arbitrary module imports while allowing the engine
+            to use its required dependencies.
+            """
+            if name in allowed_modules:
+                return allowed_modules[name]
+            
+            raise ImportError(f"Import of '{name}' is not allowed. Only whitelisted modules can be imported.")
+        
         return {
             '__builtins__': {
-                # Only allow safe built-in functions
+                # Safe built-in functions
                 'True': True,
                 'False': False,
                 'None': None,
@@ -248,15 +270,31 @@ class DashboardEngine(models.Model):
                 'getattr': getattr,
                 'setattr': setattr,
                 'type': type,
+                'callable': callable,
+                # Exception types (needed for error handling)
+                'Exception': Exception,
+                'ValueError': ValueError,
+                'TypeError': TypeError,
+                'KeyError': KeyError,
+                'AttributeError': AttributeError,
+                'IndexError': IndexError,
+                'NameError': NameError,
+                'RuntimeError': RuntimeError,
+                # Provide safe __import__ for whitelisted modules
+                '__import__': safe_import,
             },
-            # Allow safe modules needed by engine
+            # Module metadata
+            '__name__': 'odash.engine',
+            # Pre-import modules for direct access
             'logging': logging,
             'datetime': datetime,
             'timedelta': timedelta,
             'relativedelta': relativedelta,
             'pytz': pytz,
+            # Logger instance (used by engine code as _logger)
+            '_logger': logging.getLogger('odash.engine'),
         }
-    
+
     def _execute_engine_code(self, method_name, *args, **kwargs):
         """
         PRIVATE: Execute a method from the engine code.
@@ -280,14 +318,17 @@ class DashboardEngine(models.Model):
         try:
             # Get safe globals dictionary (restricted namespace)
             safe_globals = self._get_safe_globals()
-            shared_namespace = {}
             
             # Execute the code in the restricted namespace
-            exec(code, safe_globals, shared_namespace)
+            # Use safe_globals as both globals and locals so functions can see each other
+            exec(code, safe_globals, safe_globals)
+            
             # Check if the method exists in the namespace
-            if method_name in shared_namespace:
-                func = shared_namespace[method_name]
+            if method_name in safe_globals:
+                func = safe_globals[method_name]
+                _logger.info(f"Executing engine method '{method_name}' with args: {args[:1] if args else 'none'}")
                 result = func(*args, **kwargs)
+                _logger.info(f"Engine method '{method_name}' returned: {type(result)} - success: {result.get('success') if isinstance(result, dict) else 'N/A'}")
                 return result
             else:
                 _logger.error(f"Method '{method_name}' not found in engine code")
@@ -303,14 +344,14 @@ class DashboardEngine(models.Model):
                     
                     # Get safe globals dictionary for fallback (restricted namespace)
                     safe_globals_fallback = self._get_safe_globals()
-                    fallback_namespace = {}
                     
                     # Execute the previous code with restricted namespace
-                    exec(engine.previous_code, safe_globals_fallback, fallback_namespace)
+                    # Use safe_globals_fallback as both globals and locals so functions can see each other
+                    exec(engine.previous_code, safe_globals_fallback, safe_globals_fallback)
                     
                     # Check if the method exists in the fallback namespace
-                    if method_name in fallback_namespace:
-                        func = fallback_namespace[method_name]
+                    if method_name in safe_globals_fallback:
+                        func = safe_globals_fallback[method_name]
                         result = func(*args, **kwargs)
                     else:
                         return {'error': f"Method '{method_name}' not found in fallback code"}
@@ -442,10 +483,6 @@ class DashboardEngine(models.Model):
                 'method': 'get_model_fields', 
                 'args': [parameters.get('model_name'), env]
             },
-            'get_model_records': {
-                'method': 'get_model_records',
-                'args': [parameters.get('model_name'), parameters, env]
-            },
             'get_model_search': {
                 'method': 'get_model_search',
                 'args': [parameters.get('model_name'), parameters, request]
@@ -460,7 +497,7 @@ class DashboardEngine(models.Model):
 
     def _validate_legacy_parameters(self, action, parameters):
         """Validate parameters for legacy actions."""
-        if action in ['get_model_fields', 'get_model_records', 'get_model_search'] and not parameters.get('model_name'):
+        if action in ['get_model_fields', 'get_model_search'] and not parameters.get('model_name'):
             return {'success': False, 'error': _("Missing required parameter: model_name")}
         elif action == 'process_dashboard_request' and not parameters.get('request_data'):
             return {'success': False, 'error': _("Missing required parameter: request_data")}
