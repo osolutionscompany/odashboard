@@ -137,7 +137,7 @@ class OdashboardAPI(http.Controller):
         
         Expected payload format:
         {
-            "action": "get_models|get_model_fields|get_model_records|get_model_search|process_dashboard_request",
+            "action": "get_models|get_model_fields|get_model_search|process_dashboard_request",
             "parameters": {
                 // Action-specific parameters
             }
@@ -165,7 +165,7 @@ class OdashboardAPI(http.Controller):
             engine = request.env['odash.engine'].sudo()._get_single_record()
             
             # Dispatch to engine with unified interface
-            result = engine.execute_unified_request(action, parameters, request.env, request)
+            result = engine._execute_unified_request(action, parameters, request.env, request)
             
             if result.get('success'):
                 return ApiHelper.json_valid_response(result.get('data'), 200)
@@ -215,7 +215,7 @@ class OdashboardAPI(http.Controller):
         """
         # Delegate to unified entry point
         engine = request.env['odash.engine'].sudo()._get_single_record()
-        result = engine.execute_unified_request('get_models', {}, request.env)
+        result = engine._execute_unified_request('get_models', {}, request.env)
 
         if result.get('success'):
             return ApiHelper.json_valid_response(result.get('data', []), 200)
@@ -236,30 +236,7 @@ class OdashboardAPI(http.Controller):
         """
         # Delegate to unified entry point
         engine = request.env['odash.engine'].sudo()._get_single_record()
-        result = engine.execute_unified_request('get_model_fields', {'model_name': model_name}, request.env)
-
-        if result.get('success'):
-            return self._build_response(result.get('data', {}), 200)
-        else:
-            return ApiHelper.json_error_response(result.get('error', _('Unknown error')), 500)
-
-    @http.route(['/api/get/model_records/<string:model_name>'], type='http', auth='none', csrf=False,
-                methods=['GET'], cors="*")
-    def get_model_records(self, model_name, **kw):
-        """
-        Retrieve records of a specific Odoo model with pagination and search functionality.
-        
-        DEPRECATED: Use /api/odash/execute with action='get_model_records' instead.
-        This route is maintained for backward compatibility.
-
-        :param model_name: Name of the Odoo model (example: 'sale.order')
-        :return: JSON with model records
-        """
-        # Delegate to unified entry point
-        engine = request.env['odash.engine'].sudo()._get_single_record()
-        parameters = dict(kw)
-        parameters['model_name'] = model_name
-        result = engine.execute_unified_request('get_model_records', parameters, request.env)
+        result = engine._execute_unified_request('get_model_fields', {'model_name': model_name}, request.env)
 
         if result.get('success'):
             return self._build_response(result.get('data', {}), 200)
@@ -279,7 +256,7 @@ class OdashboardAPI(http.Controller):
         engine = request.env['odash.engine'].sudo()._get_single_record()
         parameters = dict(kw)
         parameters['model_name'] = model_name
-        result = engine.execute_unified_request('get_model_search', parameters, request.env, request)
+        result = engine._execute_unified_request('get_model_search', parameters, request.env, request)
 
         if result.get('success'):
             return self._build_response({'results': result.get('data', {})}, 200)
@@ -306,7 +283,7 @@ class OdashboardAPI(http.Controller):
                 request_data = json.loads(request.httprequest.data.decode('utf-8'))
 
                 # Delegate to unified entry point
-                result = engine.execute_unified_request('process_dashboard_request', 
+                result = engine._execute_unified_request('process_dashboard_request', 
                                                       {'request_data': request_data}, 
                                                       request.env)
 
