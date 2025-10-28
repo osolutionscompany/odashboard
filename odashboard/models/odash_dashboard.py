@@ -42,7 +42,7 @@ class Dashboard(models.Model):
     page_id = fields.Many2one("odash.config", string="Page")
 
     connection_url = fields.Char(string="URL")
-    token = fields.Char(string="Token")
+    token = fields.Char(string="Token", groups='base.group_no_one')
     config = fields.Json(string="Config")
 
     last_authentication_date = fields.Datetime(string="Last Authentication Date")
@@ -71,12 +71,12 @@ class Dashboard(models.Model):
         config_model = self.env['ir.config_parameter'].sudo()
         base_url = config_model.get_param('web.base.url')
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
-        new_token = generate_random_string(64) if not dashboard_id.token else dashboard_id.token
+        new_token = generate_random_string(64) if not dashboard_id.sudo().token else dashboard_id.sudo().token
         companies_ids = self.env['res.company'].search([])
 
         new_connection_url = generate_connection_url(connection_url, True, new_token, base_url, None, companies_ids.ids)
 
-        dashboard_id.write({
+        dashboard_id.sudo().write({
             "token": new_token,
             "connection_url": new_connection_url,
             "last_authentication_date": datetime.now(),
@@ -109,10 +109,10 @@ class Dashboard(models.Model):
         config_model = self.env['ir.config_parameter'].sudo()
         base_url = config_model.get_param('web.base.url')
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
-        new_token = generate_random_string(64) if not self.token else self.token
+        new_token = generate_random_string(64) if not self.sudo().token else self.sudo().token
 
         new_connection_url = generate_connection_url(connection_url, False, new_token, base_url, self.user_id, companies_ids)
-        self.write({
+        self.sudo().write({
             "token": new_token,
             "connection_url": new_connection_url,
             "last_authentication_date": datetime.now(),
@@ -123,10 +123,10 @@ class Dashboard(models.Model):
         config_model = self.env['ir.config_parameter'].sudo()
         base_url = config_model.get_param('web.base.url')
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')
-        new_token = generate_random_string(64) if not self.token else self.token
+        new_token = generate_random_string(64) if not self.sudo().token else self.sudo().token
 
         new_connection_url = generate_connection_url(connection_url, False, new_token, base_url, self.user_id, self.env.companies.ids)
-        self.write({
+        self.sudo().write({
             "token": new_token,
             "connection_url": new_connection_url,
             "last_authentication_date": datetime.now(),

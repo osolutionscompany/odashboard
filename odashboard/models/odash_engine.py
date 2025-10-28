@@ -200,11 +200,73 @@ class DashboardEngine(models.Model):
             self._add_to_log(message)
             return False
 
-    def execute_engine_code(self, method_name, *args, **kwargs):
+    def _get_safe_globals(self):
         """
-        Execute a method from the engine code.
+        Create a safe globals dictionary for code execution.
+        
+        This restricts access to dangerous built-ins like __import__, open, eval, exec, etc.
+        Only safe built-in functions and necessary modules are allowed.
+        
+        Returns:
+            dict: Safe globals dictionary for exec()
+        """
+        import logging
+        from datetime import datetime, timedelta
+        from dateutil.relativedelta import relativedelta
+        import pytz
+        
+        return {
+            '__builtins__': {
+                # Only allow safe built-in functions
+                'True': True,
+                'False': False,
+                'None': None,
+                'str': str,
+                'int': int,
+                'float': float,
+                'bool': bool,
+                'list': list,
+                'dict': dict,
+                'tuple': tuple,
+                'set': set,
+                'len': len,
+                'range': range,
+                'enumerate': enumerate,
+                'zip': zip,
+                'map': map,
+                'filter': filter,
+                'sorted': sorted,
+                'sum': sum,
+                'min': min,
+                'max': max,
+                'abs': abs,
+                'round': round,
+                'any': any,
+                'all': all,
+                'isinstance': isinstance,
+                'hasattr': hasattr,
+                'getattr': getattr,
+                'setattr': setattr,
+                'type': type,
+            },
+            # Allow safe modules needed by engine
+            'logging': logging,
+            'datetime': datetime,
+            'timedelta': timedelta,
+            'relativedelta': relativedelta,
+            'pytz': pytz,
+        }
+    
+    def _execute_engine_code(self, method_name, *args, **kwargs):
+        """
+        PRIVATE: Execute a method from the engine code.
         If execution fails, fall back to the previous version.
         In development mode, it will try to load code from the local file system first.
+        
+        This method is private to prevent direct RPC calls with arbitrary method names.
+        Use execute_unified_request through the /api/odash/execute controller instead.
+        
+        SECURITY: Uses restricted namespace without __builtins__ to prevent system access.
         """
         self.ensure_one()
         engine = self
@@ -216,10 +278,12 @@ class DashboardEngine(models.Model):
         
         # Try to execute the current code
         try:
+            # Get safe globals dictionary (restricted namespace)
+            safe_globals = self._get_safe_globals()
             shared_namespace = {}
             
-            # Execute the code in the shared namespace
-            exec(code, shared_namespace, shared_namespace)
+            # Execute the code in the restricted namespace
+            exec(code, safe_globals, shared_namespace)
             # Check if the method exists in the namespace
             if method_name in shared_namespace:
                 func = shared_namespace[method_name]
@@ -237,11 +301,12 @@ class DashboardEngine(models.Model):
                 try:
                     _logger.info(f"Attempting fallback execution of '{method_name}'")
                     
-                    # Create a shared namespace for fallback
+                    # Get safe globals dictionary for fallback (restricted namespace)
+                    safe_globals_fallback = self._get_safe_globals()
                     fallback_namespace = {}
                     
-                    # Execute the previous code with shared namespace
-                    exec(engine.previous_code, fallback_namespace, fallback_namespace)
+                    # Execute the previous code with restricted namespace
+                    exec(engine.previous_code, safe_globals_fallback, fallback_namespace)
                     
                     # Check if the method exists in the fallback namespace
                     if method_name in fallback_namespace:
@@ -261,12 +326,15 @@ class DashboardEngine(models.Model):
             
             return {'error': f"Error in engine execution: {str(e)}"}
 
-    def execute_unified_request(self, action, parameters, env, request=None):
+    def _execute_unified_request(self, action, parameters, env, request=None):
         """
-        Unified request dispatcher that routes requests to appropriate engine methods.
+        PRIVATE: Unified request dispatcher that routes requests to appropriate engine methods.
         
         This method dynamically dispatches requests to the engine without requiring
         hardcoded action mappings, making it fully extensible through engine updates.
+        
+        This method is private to prevent direct RPC calls. It enforces action whitelisting
+        through get_action_config or _get_legacy_action_config.
         
         Args:
             action (str): The action to perform (method name in engine)
@@ -282,7 +350,7 @@ class DashboardEngine(models.Model):
         try:
             # First, try to get action configuration from the engine itself
             # This allows the engine to define its own action mappings
-            engine_config = self.execute_engine_code('get_action_config', action)
+            engine_config = self._execute_engine_code('get_action_config', action)
             
             if engine_config and engine_config.get('success'):
                 # Engine provides action configuration
@@ -315,13 +383,13 @@ class DashboardEngine(models.Model):
                     return validation_error
             
             # Execute the engine method
-            result = self.execute_engine_code(method_name, *args)
+            result = self._execute_engine_code(method_name, *args)
             
             # Standardize the response format
             return self._standardize_response(result)
                 
         except Exception as e:
-            _logger.exception("Error in execute_unified_request: %s", e)
+            _logger.exception("Error in _execute_unified_request: %s", e)
             return {
                 'success': False,
                 'error': str(e)

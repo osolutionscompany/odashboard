@@ -165,7 +165,7 @@ class OdashboardAPI(http.Controller):
             engine = request.env['odash.engine'].sudo()._get_single_record()
             
             # Dispatch to engine with unified interface
-            result = engine.execute_unified_request(action, parameters, request.env, request)
+            result = engine._execute_unified_request(action, parameters, request.env, request)
             
             if result.get('success'):
                 return ApiHelper.json_valid_response(result.get('data'), 200)
@@ -207,7 +207,7 @@ class OdashboardAPI(http.Controller):
         """
         # Delegate to unified entry point
         engine = request.env['odash.engine'].sudo()._get_single_record()
-        result = engine.execute_unified_request('get_models', {}, request.env)
+        result = engine._execute_unified_request('get_models', {}, request.env)
 
         if result.get('success'):
             return ApiHelper.json_valid_response(result.get('data', []), 200)
@@ -228,7 +228,7 @@ class OdashboardAPI(http.Controller):
         """
         # Delegate to unified entry point
         engine = request.env['odash.engine'].sudo()._get_single_record()
-        result = engine.execute_unified_request('get_model_fields', {'model_name': model_name}, request.env)
+        result = engine._execute_unified_request('get_model_fields', {'model_name': model_name}, request.env)
 
         if result.get('success'):
             return self._build_response(result.get('data', {}), 200)
@@ -251,7 +251,7 @@ class OdashboardAPI(http.Controller):
         engine = request.env['odash.engine'].sudo()._get_single_record()
         parameters = dict(kw)
         parameters['model_name'] = model_name
-        result = engine.execute_unified_request('get_model_records', parameters, request.env)
+        result = engine._execute_unified_request('get_model_records', parameters, request.env)
 
         if result.get('success'):
             return self._build_response(result.get('data', {}), 200)
@@ -271,7 +271,7 @@ class OdashboardAPI(http.Controller):
         engine = request.env['odash.engine'].sudo()._get_single_record()
         parameters = dict(kw)
         parameters['model_name'] = model_name
-        result = engine.execute_unified_request('get_model_search', parameters, request.env, request)
+        result = engine._execute_unified_request('get_model_search', parameters, request.env, request)
 
         if result.get('success'):
             return self._build_response({'results': result.get('data', {})}, 200)
@@ -298,7 +298,7 @@ class OdashboardAPI(http.Controller):
                 request_data = json.loads(request.httprequest.data.decode('utf-8'))
 
                 # Delegate to unified entry point
-                result = engine.execute_unified_request('process_dashboard_request', 
+                result = engine._execute_unified_request('process_dashboard_request', 
                                                       {'request_data': request_data}, 
                                                       request.env)
 
