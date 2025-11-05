@@ -31,10 +31,17 @@ class DashboardEngine(models.Model):
     @api.model
     def _get_github_base_url(self):
         """Get the base URL for GitHub repository."""
-        return self.env['ir.config_parameter'].sudo().get_param(
+        base_url = self.env['ir.config_parameter'].sudo().get_param(
             'odashboard.github_base_url', 
             'https://raw.githubusercontent.com/osolutionscompany/odashboard.engine/main/'
         )
+        
+        # SECURITY: Enforce HTTPS to prevent MITM attacks
+        if not base_url.startswith('https://'):
+            _logger.error("GitHub base URL must use HTTPS. Got: %s", base_url)
+            raise ValidationError(_("GitHub base URL must use HTTPS for security"))
+        
+        return base_url
     @api.model
     def _get_versions_url(self):
         """Get the URL for versions.json file."""
@@ -169,6 +176,19 @@ class DashboardEngine(models.Model):
                 return False
             
             new_code = response.text
+            
+            # SECURITY: Verify checksum if provided to prevent tampering
+            expected_checksum = version_info.get('sha256')
+            if expected_checksum:
+                actual_checksum = hashlib.sha256(new_code.encode('utf-8')).hexdigest()
+                if actual_checksum != expected_checksum:
+                    message = f"Checksum verification failed! Expected: {expected_checksum}, Got: {actual_checksum}. Possible tampering detected."
+                    _logger.error(message)
+                    self._add_to_log(message)
+                    return False
+                _logger.info("Checksum verification passed: %s", actual_checksum)
+            else:
+                _logger.warning("No checksum provided for version %s - cannot verify integrity", new_version)
             
             # Validate Python syntax
             try:
