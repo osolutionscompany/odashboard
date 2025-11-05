@@ -58,7 +58,7 @@ class Dashboard(models.Model):
             self.env['ir.config_parameter'].sudo().set_param('odashboard.api.token', data['token'])
             self.env['ir.config_parameter'].sudo().set_param('odashboard.plan', data['plan'])
 
-    def get_public_dashboard(self, page_id=False):
+    def _get_public_dashboard(self, page_id=False):
         user_id = self.env.ref('base.public_user').id
         dashboard_id = self.search([('user_id', '=', user_id), ('page_id', '=', page_id)], limit=1)
 
@@ -105,7 +105,7 @@ class Dashboard(models.Model):
             'target': 'current',
         }
 
-    def ask_refresh(self, companies_ids):
+    def _ask_refresh(self, companies_ids):
         config_model = self.env['ir.config_parameter'].sudo()
         base_url = config_model.get_param('web.base.url')
         connection_url = config_model.get_param('odashboard.connection.url', 'https://app.odashboard.app')

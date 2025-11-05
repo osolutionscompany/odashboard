@@ -216,13 +216,17 @@ class DashboardEngine(models.Model):
         from datetime import datetime, timedelta
         from dateutil.relativedelta import relativedelta
         import pytz
+        from odoo.tools import SQL
+        from psycopg2.extensions import AsIs
         
         # Whitelist of allowed modules
         allowed_modules = {
             'logging': logging,
             'datetime': __import__('datetime'),
             'pytz': pytz,
+            'odoo.tools': __import__('odoo.tools', fromlist=['SQL']),
             'dateutil.relativedelta': __import__('dateutil.relativedelta', fromlist=['relativedelta']),
+            'psycopg2.extensions': __import__('psycopg2.extensions', fromlist=['AsIs']),
         }
         
         def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -291,6 +295,8 @@ class DashboardEngine(models.Model):
             'timedelta': timedelta,
             'relativedelta': relativedelta,
             'pytz': pytz,
+            'SQL': SQL,
+            'AsIs': AsIs,
             # Logger instance (used by engine code as _logger)
             '_logger': logging.getLogger('odash.engine'),
         }
