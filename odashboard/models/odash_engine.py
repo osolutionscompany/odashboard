@@ -5,6 +5,8 @@ import hashlib
 
 from odoo import models, fields, api, _, tools
 from odoo.exceptions import ValidationError
+from odoo.tools.safe_eval import safe_eval
+
 
 _logger = logging.getLogger(__name__)
 
@@ -220,107 +222,6 @@ class DashboardEngine(models.Model):
             self._add_to_log(message)
             return False
 
-    def _get_safe_globals(self):
-        """
-        Create a safe globals dictionary for code execution.
-        
-        This provides a restricted namespace that:
-        - Allows whitelisted module imports only
-        - Blocks dangerous built-ins (open, eval, exec, compile)
-        - Provides safe built-in functions
-        
-        Returns:
-            dict: Safe globals dictionary for exec()
-        """
-        import logging
-        from datetime import datetime, timedelta
-        from dateutil.relativedelta import relativedelta
-        import pytz
-        from odoo.tools import SQL
-        from psycopg2.extensions import AsIs
-        
-        # Whitelist of allowed modules
-        allowed_modules = {
-            'logging': logging,
-            'datetime': __import__('datetime'),
-            'pytz': pytz,
-            'odoo.tools': __import__('odoo.tools', fromlist=['SQL']),
-            'dateutil.relativedelta': __import__('dateutil.relativedelta', fromlist=['relativedelta']),
-            'psycopg2.extensions': __import__('psycopg2.extensions', fromlist=['AsIs']),
-        }
-        
-        def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
-            """
-            Safe import function that only allows whitelisted modules.
-            
-            This prevents arbitrary module imports while allowing the engine
-            to use its required dependencies.
-            """
-            if name in allowed_modules:
-                return allowed_modules[name]
-            
-            raise ImportError(f"Import of '{name}' is not allowed. Only whitelisted modules can be imported.")
-        
-        return {
-            '__builtins__': {
-                # Safe built-in functions
-                'True': True,
-                'False': False,
-                'None': None,
-                'str': str,
-                'int': int,
-                'float': float,
-                'bool': bool,
-                'list': list,
-                'dict': dict,
-                'tuple': tuple,
-                'set': set,
-                'len': len,
-                'range': range,
-                'enumerate': enumerate,
-                'zip': zip,
-                'map': map,
-                'filter': filter,
-                'sorted': sorted,
-                'sum': sum,
-                'min': min,
-                'max': max,
-                'abs': abs,
-                'round': round,
-                'any': any,
-                'all': all,
-                'isinstance': isinstance,
-                'hasattr': hasattr,
-                'getattr': getattr,
-                'setattr': setattr,
-                'type': type,
-                'callable': callable,
-                # Exception types (needed for error handling)
-                'Exception': Exception,
-                'ValueError': ValueError,
-                'TypeError': TypeError,
-                'KeyError': KeyError,
-                'AttributeError': AttributeError,
-                'IndexError': IndexError,
-                'NameError': NameError,
-                'RuntimeError': RuntimeError,
-                # Provide safe __import__ for whitelisted modules
-                '__import__': safe_import,
-            },
-            # Module metadata
-            '__name__': 'odash.engine',
-            # Pre-import modules for direct access
-            'logging': logging,
-            'datetime': datetime,
-            'timedelta': timedelta,
-            'relativedelta': relativedelta,
-            'pytz': pytz,
-            'SQL': SQL,
-            'AsIs': AsIs,
-            # Logger instance (used by engine code as _logger)
-            '_logger': logging.getLogger('odash.engine'),
-        }
-
     def _execute_engine_code(self, method_name, *args, **kwargs):
         """
         PRIVATE: Execute a method from the engine code.
@@ -342,18 +243,20 @@ class DashboardEngine(models.Model):
         
         # Try to execute the current code
         try:
-            # Get safe globals dictionary (restricted namespace)
-            safe_globals = self._get_safe_globals()
+            _globals = {'_logger': _logger, 'SQL': tools.SQL}
+            _locals = {}
             
             # Execute the code in the restricted namespace
             # Use safe_globals as both globals and locals so functions can see each other
-            exec(code, safe_globals, safe_globals)
+            safe_eval(code, _globals, _locals, mode="exec", nocopy=True)
             
             # Check if the method exists in the namespace
-            if method_name in safe_globals:
-                func = safe_globals[method_name]
+            if method_name in _locals:
+                _globals.update(_locals)
+                _locals.update(args=args, kwargs=kwargs)
+                safe_eval(f"result = {method_name}(*args, **kwargs)", _globals, _locals, mode="exec", nocopy=True)
                 _logger.info(f"Executing engine method '{method_name}' with args: {args[:1] if args else 'none'}")
-                result = func(*args, **kwargs)
+                result = _locals['result']
                 _logger.info(f"Engine method '{method_name}' returned: {type(result)} - success: {result.get('success') if isinstance(result, dict) else 'N/A'}")
                 return result
             else:
@@ -368,17 +271,18 @@ class DashboardEngine(models.Model):
                 try:
                     _logger.info(f"Attempting fallback execution of '{method_name}'")
                     
-                    # Get safe globals dictionary for fallback (restricted namespace)
-                    safe_globals_fallback = self._get_safe_globals()
-                    
                     # Execute the previous code with restricted namespace
                     # Use safe_globals_fallback as both globals and locals so functions can see each other
-                    exec(engine.previous_code, safe_globals_fallback, safe_globals_fallback)
+                    _globals = {'_logger': _logger}
+                    _locals = {}
+                    safe_eval(code, _globals, _locals, mode="exec", nocopy=True)
                     
                     # Check if the method exists in the fallback namespace
-                    if method_name in safe_globals_fallback:
-                        func = safe_globals_fallback[method_name]
-                        result = func(*args, **kwargs)
+                    if method_name in _locals:
+                        _globals.update(_locals)
+                        _locals.update(args=args, kwargs=kwargs)
+                        safe_eval(f"result = {method_name}(*args, **kwargs)", _globals, _locals, mode="exec", nocopy=True)
+                        result = _locals['result']
                     else:
                         return {'error': f"Method '{method_name}' not found in fallback code"}
                 
