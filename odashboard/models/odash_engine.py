@@ -310,17 +310,49 @@ class DashboardEngine(models.Model):
             self._add_to_log(message)
             return False
 
+    # def _compare_versions(self, version1, version2):
+    #     """
+    #     Compare two version strings.
+    #
+    #     Args:
+    #         version1: First version string (e.g., '1.0.1')
+    #         version2: Second version string (e.g., '1.0.0')
+    #
+    #     Returns:
+    #         int: 1 if version1 > version2, -1 if version1 < version2, 0 if equal
+    #     """
+    #     try:
+    #         v1_parts = [int(x) for x in version1.split('.')]
+    #         v2_parts = [int(x) for x in version2.split('.')]
+    #
+    #         # Pad with zeros if needed
+    #         max_len = max(len(v1_parts), len(v2_parts))
+    #         v1_parts.extend([0] * (max_len - len(v1_parts)))
+    #         v2_parts.extend([0] * (max_len - len(v2_parts)))
+    #
+    #         for v1, v2 in zip(v1_parts, v2_parts):
+    #             if v1 > v2:
+    #                 return 1
+    #             elif v1 < v2:
+    #                 return -1
+    #         return 0
+    #     except (ValueError, AttributeError):
+    #         _logger.warning(f"Invalid version format: {version1} or {version2}")
+    #         return 0
+
     def _execute_engine_code(self, method_name, *args, **kwargs):
         """
         PRIVATE: Execute a method from the engine code.
         If execution fails, fall back to the previous version.
-        In development mode, it will try to load code from the local file system first.
 
         This method is private to prevent direct RPC calls with arbitrary method names.
         Use execute_unified_request through the /api/odash/execute controller instead.
 
+        BACKWARD COMPATIBILITY:
+        - Version >= 1.0.1: Uses exec() with restricted namespace (supports lambdas)
+        - Version < 1.0.1: Uses basic exec() (legacy engines without lambdas)
+
         SECURITY: Uses restricted namespace with limited builtins to prevent system access.
-        Allows lambdas/closures (unlike safe_eval) which are needed by engine.py.
         """
         self.ensure_one()
         engine = self
@@ -330,25 +362,38 @@ class DashboardEngine(models.Model):
             _logger.error("No engine code available")
             return {'error': _('No engine code available')}
 
+        # Determine execution method based on version
+        current_version = engine.version or '1.0.0'
+        use_safe_namespace = current_version >= '1.0.1'
+
         # Try to execute the current code
         try:
-            # Get restricted global namespace
-            safe_globals = self._get_safe_globals()
+            if use_safe_namespace:
+                # v1.0.1+: Use restricted namespace (supports lambdas/closures)
+                safe_globals = self._get_safe_globals()
+                exec(code, safe_globals, safe_globals)
 
-            # Execute the code in the restricted namespace
-            # Functions defined in the code will be added to safe_globals
-            exec(code, safe_globals, safe_globals)
-
-            # Check if the method exists in the namespace
-            if method_name in safe_globals:
-                func = safe_globals[method_name]
-                _logger.info(f"Executing engine method '{method_name}' with {len(args)} args")
-                result = func(*args, **kwargs)
-                _logger.info(f"Engine method '{method_name}' returned: {type(result)} - success: {result.get('success') if isinstance(result, dict) else 'N/A'}")
-                return result
+                if method_name in safe_globals:
+                    func = safe_globals[method_name]
+                    result = func(*args, **kwargs)
+                    return result
+                else:
+                    _logger.error(f"Method '{method_name}' not found in engine code")
+                    return {'error': f"Method '{method_name}' not found in engine code"}
             else:
-                _logger.error(f"Method '{method_name}' not found in engine code")
-                return {'error': f"Method '{method_name}' not found in engine code"}
+                # v1.0.0: Basic execution for legacy engines
+                # Legacy engines don't use lambdas, so basic namespace is sufficient
+                namespace = {'_logger': _logger}
+                exec(code, namespace, namespace)
+
+                if method_name in namespace:
+                    func = namespace[method_name]
+                    _logger.info(f"Executing legacy engine method '{method_name}'")
+                    result = func(*args, **kwargs)
+                    return result
+                else:
+                    _logger.error(f"Method '{method_name}' not found in legacy engine code")
+                    return {'error': f"Method '{method_name}' not found in engine code"}
 
         except Exception as e:
             _logger.exception(f"Error executing '{method_name}': {str(e)}")
@@ -358,13 +403,10 @@ class DashboardEngine(models.Model):
                 try:
                     _logger.info(f"Attempting fallback execution of '{method_name}'")
 
-                    # Get restricted global namespace for fallback
+                    # Use safe namespace for fallback (assumes previous version also modern)
                     safe_globals_fallback = self._get_safe_globals()
-
-                    # Execute the previous code with restricted namespace
                     exec(engine.previous_code, safe_globals_fallback, safe_globals_fallback)
 
-                    # Check if the method exists in the fallback namespace
                     if method_name in safe_globals_fallback:
                         func = safe_globals_fallback[method_name]
                         result = func(*args, **kwargs)
