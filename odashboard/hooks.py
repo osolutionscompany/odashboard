@@ -32,11 +32,16 @@ def post_init_hook(env):
         
         # Get O'Solutions API endpoint
         api_endpoint = env['ir.config_parameter'].sudo().get_param('odashboard.api.endpoint')
+
+        # Get user email for trial expiration notification
+        user_email = env.user.email or ''
+
         # Prepare data for API call
         api_data = {
             'key': demo_key_uuid,
             'uuid': odashboard_uuid,
             'url': base_url,
+            'email': user_email,
         }
         
         # Make secure API call to create demo key
@@ -84,7 +89,7 @@ def uninstall_hook(env):
     try:
         # Remove demo key parameters
         env['ir.config_parameter'].sudo().search([
-            ('key', 'in', ['odashboard.key', 'odashboard.key_synchronized'])
+            ('key', 'in', ['odashboard.key', 'odashboard.plan', 'odashboard.uuid', 'odashboard.api.token', 'odashboard.key_synchronized'])
         ]).unlink()
         
         _logger.info("Demo key parameters cleaned up during uninstall")
