@@ -2,10 +2,12 @@ import logging
 import requests
 import ast
 import hashlib
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
+import pytz
 
 from odoo import models, fields, api, _, tools
 from odoo.exceptions import ValidationError
-from odoo.tools.safe_eval import safe_eval
 
 
 _logger = logging.getLogger(__name__)
@@ -99,6 +101,92 @@ class DashboardEngine(models.Model):
         timestamp = fields.Datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         current_log = self.update_log or ''
         self.update_log = f"{current_log}\n[{timestamp}] {message}" if current_log else f"[{timestamp}] {message}"
+
+    def _get_safe_globals(self):
+        """
+        Create a restricted global namespace for engine code execution.
+
+        This provides necessary Python/Odoo modules while blocking dangerous operations.
+        Allows lambdas and closures (unlike safe_eval) but restricts system access.
+
+        Returns:
+            dict: Safe globals dictionary with allowed modules and limited builtins
+        """
+        # Allowed safe builtins - carefully selected to prevent system access
+        safe_builtins = {
+            # Type constructors
+            'dict': dict,
+            'list': list,
+            'tuple': tuple,
+            'set': set,
+            'frozenset': frozenset,
+            'str': str,
+            'int': int,
+            'float': float,
+            'bool': bool,
+            'bytes': bytes,
+
+            # Common functions
+            'len': len,
+            'range': range,
+            'enumerate': enumerate,
+            'zip': zip,
+            'map': map,
+            'filter': filter,
+            'sorted': sorted,
+            'reversed': reversed,
+            'sum': sum,
+            'min': min,
+            'max': max,
+            'abs': abs,
+            'round': round,
+            'any': any,
+            'all': all,
+
+            # String/iteration
+            'ord': ord,
+            'chr': chr,
+            'isinstance': isinstance,
+            'issubclass': issubclass,
+            'hasattr': hasattr,
+            'getattr': getattr,
+            'setattr': setattr,
+
+            # Type checks
+            'type': type,
+
+            # Exceptions (needed for error handling)
+            'Exception': Exception,
+            'ValueError': ValueError,
+            'TypeError': TypeError,
+            'KeyError': KeyError,
+            'AttributeError': AttributeError,
+            'IndexError': IndexError,
+
+            # None, True, False are automatically available
+            'None': None,
+            'True': True,
+            'False': False,
+        }
+
+        # Safe globals with necessary modules for engine execution
+        safe_globals = {
+            '__builtins__': safe_builtins,
+            '_logger': _logger,
+
+            # DateTime modules (needed by engine.py)
+            'datetime': datetime,
+            'timedelta': timedelta,
+            'relativedelta': relativedelta,
+            'pytz': pytz,
+
+            # Odoo SQL builder (needed for v1.0.1 security)
+            'SQL': tools.SQL,
+
+            # Note: We don't provide __import__, eval, exec, compile, open, or other dangerous functions
+        }
+
+        return safe_globals
 
     def check_for_updates(self):
         """
@@ -227,11 +315,12 @@ class DashboardEngine(models.Model):
         PRIVATE: Execute a method from the engine code.
         If execution fails, fall back to the previous version.
         In development mode, it will try to load code from the local file system first.
-        
+
         This method is private to prevent direct RPC calls with arbitrary method names.
         Use execute_unified_request through the /api/odash/execute controller instead.
-        
-        SECURITY: Uses restricted namespace without __builtins__ to prevent system access.
+
+        SECURITY: Uses restricted namespace with limited builtins to prevent system access.
+        Allows lambdas/closures (unlike safe_eval) which are needed by engine.py.
         """
         self.ensure_one()
         engine = self
@@ -240,61 +329,57 @@ class DashboardEngine(models.Model):
         if not code:
             _logger.error("No engine code available")
             return {'error': _('No engine code available')}
-        
+
         # Try to execute the current code
         try:
-            _globals = {'_logger': _logger, 'SQL': tools.SQL}
-            _locals = {}
-            
+            # Get restricted global namespace
+            safe_globals = self._get_safe_globals()
+
             # Execute the code in the restricted namespace
-            # Use safe_globals as both globals and locals so functions can see each other
-            safe_eval(code, _globals, _locals, mode="exec", nocopy=True)
-            
+            # Functions defined in the code will be added to safe_globals
+            exec(code, safe_globals, safe_globals)
+
             # Check if the method exists in the namespace
-            if method_name in _locals:
-                _globals.update(_locals)
-                _locals.update(args=args, kwargs=kwargs)
-                safe_eval(f"result = {method_name}(*args, **kwargs)", _globals, _locals, mode="exec", nocopy=True)
-                _logger.info(f"Executing engine method '{method_name}' with args: {args[:1] if args else 'none'}")
-                result = _locals['result']
+            if method_name in safe_globals:
+                func = safe_globals[method_name]
+                _logger.info(f"Executing engine method '{method_name}' with {len(args)} args")
+                result = func(*args, **kwargs)
                 _logger.info(f"Engine method '{method_name}' returned: {type(result)} - success: {result.get('success') if isinstance(result, dict) else 'N/A'}")
                 return result
             else:
                 _logger.error(f"Method '{method_name}' not found in engine code")
                 return {'error': f"Method '{method_name}' not found in engine code"}
-                
+
         except Exception as e:
             _logger.exception(f"Error executing '{method_name}': {str(e)}")
-            
+
             # Try with previous code as a fallback
             if engine.previous_code and engine.previous_code != code:
                 try:
                     _logger.info(f"Attempting fallback execution of '{method_name}'")
-                    
+
+                    # Get restricted global namespace for fallback
+                    safe_globals_fallback = self._get_safe_globals()
+
                     # Execute the previous code with restricted namespace
-                    # Use safe_globals_fallback as both globals and locals so functions can see each other
-                    _globals = {'_logger': _logger}
-                    _locals = {}
-                    safe_eval(code, _globals, _locals, mode="exec", nocopy=True)
-                    
+                    exec(engine.previous_code, safe_globals_fallback, safe_globals_fallback)
+
                     # Check if the method exists in the fallback namespace
-                    if method_name in _locals:
-                        _globals.update(_locals)
-                        _locals.update(args=args, kwargs=kwargs)
-                        safe_eval(f"result = {method_name}(*args, **kwargs)", _globals, _locals, mode="exec", nocopy=True)
-                        result = _locals['result']
+                    if method_name in safe_globals_fallback:
+                        func = safe_globals_fallback[method_name]
+                        result = func(*args, **kwargs)
                     else:
                         return {'error': f"Method '{method_name}' not found in fallback code"}
-                
+
                     # Log the fallback
                     self._add_to_log(f"Executed '{method_name}' using fallback code due to error: {str(e)}")
-                    
+
                     return result
-                    
+
                 except Exception as fallback_error:
                     _logger.exception(f"Error executing fallback for '{method_name}': {str(fallback_error)}")
                     return {'error': f"Error in engine execution: {str(e)}. Fallback also failed: {str(fallback_error)}"}
-            
+
             return {'error': f"Error in engine execution: {str(e)}"}
 
     def _execute_unified_request(self, action, parameters, env, request=None):
