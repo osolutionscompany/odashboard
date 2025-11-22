@@ -24,6 +24,7 @@ No coding required - just install and start building!
     """,
     'author': "O'Solutions Company",
     'website': 'https://odashboard.app',
+    'live_test_url': 'https://demo.odashboard.app/auth/autologin?db=odashboard-demo&login=demo&password=demo&redirect=/odoo',
     'depends': [
         'base',
         'web',
