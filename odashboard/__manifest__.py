@@ -1,6 +1,6 @@
 {
     'name': "O'Dashboard",
-    'version': '18.0.0.1.0',
+    'version': '18.0.1.0.0',
     'category': 'Dashboard',
     'summary': 'Advanced business intelligence dashboards with drag-and-drop interface, real-time analytics, and role-based access control for Odoo data visualization and reporting.',
     'description': """
@@ -24,6 +24,7 @@ No coding required - just install and start building!
     """,
     'author': "O'Solutions Company",
     'website': 'https://odashboard.app',
+    'live_test_url': 'https://demo.odashboard.app/auth/autologin?db=odashboard-demo&login=demo&password=demo&redirect=/odoo',
     'depends': [
         'base',
         'web',
@@ -33,6 +34,7 @@ No coding required - just install and start building!
         # Security
         'security/odash_security.xml',
         'security/ir.model.access.csv',
+        'security/odash_dashboard_rules.xml',
 
         # Data
         'data/ir_config_parameter.xml',
