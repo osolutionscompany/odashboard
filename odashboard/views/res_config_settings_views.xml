@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
-        <record id="res_config_settings_view_form_odashboard"
-                model="ir.ui.view">
-            <field name="name">
-                res.config.settings.view.form.inherit.odashboard
-            </field>
+        <record id="res_config_settings_view_form_odashboard" model="ir.ui.view">
+            <field name="name">res.config.settings.view.form.inherit.odashboard</field>
             <field name="model">res.config.settings</field>
             <field name="inherit_id" ref="base.res_config_settings_view_form"/>
             <field name="arch" type="xml">
@@ -114,14 +111,29 @@
                                                   class="badge bg-black text-white rounded">
                                                 Freemium
                                             </span>
-                                            <span invisible="odashboard_plan not in ['pro', 'partner']"
+                                            <span invisible="odashboard_plan not in ['pro', 'partner'] or odashboard_is_free_trial"
                                                   readonly="1"
                                                   class="badge bg-success text-white rounded">
                                                 Pro
                                             </span>
+                                            <span invisible="not odashboard_is_free_trial"
+                                                  readonly="1"
+                                                  class="badge bg-info text-white rounded">
+                                                Pro (Free Trial)
+                                            </span>
                                             <span invisible="odashboard_key_synchronized or odashboard_plan">
                                                 Key is not synchronized.
                                             </span>
+                                            <field name="odashboard_is_free_trial" invisible="1"/>
+                                            <field name="odashboard_free_trial_end_date" invisible="1"/>
+                                            <div class="mt-2 text-info"
+                                                 invisible="not odashboard_is_free_trial or not odashboard_free_trial_end_date">
+                                                <i class="fa fa-clock-o me-1"/>
+                                                <span>Free trial until </span>
+                                                <field name="odashboard_free_trial_end_date"
+                                                       readonly="1"
+                                                       class="d-inline"/>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

@@ -34,6 +34,7 @@ No coding required - just install and start building!
         # Security
         'security/odash_security.xml',
         'security/ir.model.access.csv',
+        'security/odash_dashboard_rules.xml',
 
         # Data
         'data/ir_config_parameter.xml',

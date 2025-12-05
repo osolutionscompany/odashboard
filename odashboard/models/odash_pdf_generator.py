@@ -54,7 +54,7 @@ class OdashPdfGenerator(models.AbstractModel):
         """Generate PDF for a single dashboard page using the existing PDF server"""
         try:
             # Get the public dashboard URL for this page
-            connection_url = self.env['odash.dashboard'].sudo().get_public_dashboard(page.id)
+            connection_url = self.env['odash.dashboard'].sudo()._get_public_dashboard(page.id)
             
             # Add PDF parameter to the URL
             pdf_url = f"{connection_url}&is_pdf=true"
