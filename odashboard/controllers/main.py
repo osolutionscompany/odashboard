@@ -12,7 +12,7 @@ class Main(http.Controller):
         page = request.env['odash.config'].sudo().search([('is_page_config', '=', True), ('id', '=', page_id)], limit=1)
         if not page or page.access_token != access_token or not page.allow_public_access:
             raise NotFound()
-        connection_url = request.env['odash.dashboard'].sudo().get_public_dashboard(page.id)
+        connection_url = request.env['odash.dashboard'].sudo()._get_public_dashboard(page.id)
         return request.render('odashboard.dashboard_public_view', {
             'connection_url': connection_url,
         })
@@ -22,7 +22,7 @@ class Main(http.Controller):
         page = request.env['odash.config'].sudo().search([('is_page_config', '=', True), ('id', '=', page_id)], limit=1)
         if not page or page.secret_access_token != access_token:
             raise NotFound()
-        connection_url = request.env['odash.dashboard'].sudo().get_public_dashboard(page.id)
+        connection_url = request.env['odash.dashboard'].sudo()._get_public_dashboard(page.id)
 
         pdf_url = request.env['ir.config_parameter'].sudo().get_param('odashboard.pdf.url', 'https://pdf.odashboard.app')
         payload = {"url": f"{connection_url}&is_pdf=true"}
@@ -55,5 +55,5 @@ class Main(http.Controller):
     def refresh_dashboard(self, **kw):
         dashboard_id = request.env.context.get('dashboard_id')
         data = ApiHelper.load_json_data(request)
-        dashboard_id.ask_refresh(data.get("company_ids"))
+        dashboard_id._ask_refresh(data.get("company_ids"))
         return ApiHelper.json_valid_response("ok", 200)

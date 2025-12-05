@@ -31,8 +31,8 @@ class OdashConfig(models.Model):
     security_group_ids = fields.Many2many(comodel_name='odash.security.group', string='Security Groups')
     user_ids = fields.Many2many(comodel_name='res.users', string='Users', domain=[('share', '=', False)])
 
-    access_token = fields.Char(string='Access token', default=lambda self: uuid.uuid4())
-    secret_access_token = fields.Char(string='Secret Access token', default=lambda self: uuid.uuid4())
+    access_token = fields.Char(string='Access token', default=lambda self: uuid.uuid4(), groups='base.group_no_one')
+    secret_access_token = fields.Char(string='Secret Access token', default=lambda self: uuid.uuid4(), groups='base.group_no_one')
 
     allow_public_access = fields.Boolean(string='Allow public access')
     public_url = fields.Char(string='Public URL', compute="_compute_public_url")
@@ -54,7 +54,7 @@ class OdashConfig(models.Model):
     def _compute_public_url(self):
         for record in self:
             base_url = record.env['ir.config_parameter'].sudo().get_param('web.base.url')
-            record.public_url = f"{base_url}/dashboard/public/{record.id}/{record.access_token}"
+            record.public_url = f"{base_url}/dashboard/public/{record.id}/{record.sudo().access_token}"
 
     @api.depends('config')
     def _compute_name(self):

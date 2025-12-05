@@ -83,6 +83,16 @@ class OdashConfigExportWizard(models.TransientModel):
             preview_lines.append(f"Total Configurations: {len(configs)}")
             preview_lines.append("")
 
+            # Show categories
+            categories = configs.mapped('category_id').filtered(lambda c: c)
+            if categories:
+                preview_lines.append(f"Categories ({len(categories)}):")
+                for category in categories[:5]:  # Show first 5
+                    preview_lines.append(f"  • {category.name}")
+                if len(categories) > 5:
+                    preview_lines.append(f"  ... and {len(categories) - 5} more categories")
+                preview_lines.append("")
+
             # Group by type
             pages = configs.filtered(lambda c: c.is_page_config)
             components = configs.filtered(lambda c: not c.is_page_config)
@@ -91,7 +101,8 @@ class OdashConfigExportWizard(models.TransientModel):
                 preview_lines.append(f"Pages ({len(pages)}):")
                 for page in pages[:5]:  # Show first 5
                     security_info = "Public" if not page.security_group_ids and not page.user_ids else "Restricted"
-                    preview_lines.append(f"  • {page.name} ({security_info})")
+                    category_info = f" [{page.category_id.name}]" if page.category_id else ""
+                    preview_lines.append(f"  • {page.name} ({security_info}){category_info}")
                 if len(pages) > 5:
                     preview_lines.append(f"  ... and {len(pages) - 5} more pages")
                 preview_lines.append("")
@@ -207,6 +218,28 @@ class OdashConfigExportWizard(models.TransientModel):
                 export_data['config_name'] = self.config_id.name
                 export_data['config_type'] = 'page' if self.config_id.is_page_config else 'component'
 
+            # Export categories (collect unique categories from all configs)
+            categories_to_export = configs.mapped('category_id').filtered(lambda c: c)
+            if categories_to_export:
+                export_data['categories'] = []
+                for category in categories_to_export:
+                    category_data = {
+                        'name': category.name,
+                        'sequence': category.sequence,
+                        'description': category.description or '',
+                        'active': category.active,
+                        'icon': category.icon or '',
+                    }
+
+                    # Add security settings if requested
+                    if self.include_security:
+                        category_data.update({
+                            'security_groups': category.security_group_ids.mapped('name'),
+                            'users': category.user_ids.mapped('login'),
+                        })
+
+                    export_data['categories'].append(category_data)
+
             # Export configurations
             for config in configs:
                 config_data = {
@@ -215,6 +248,7 @@ class OdashConfigExportWizard(models.TransientModel):
                     'is_page_config': config.is_page_config,
                     'config_id': config.config_id,
                     'config': config.config,
+                    'category_name': config.category_id.name if config.category_id else None,
                 }
 
                 # Add security settings if requested
