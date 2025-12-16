@@ -1,10 +1,14 @@
-from odoo import models, fields, api, _, tools
 import logging
 import requests
 import ast
 import hashlib
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
+import pytz
 
+from odoo import models, fields, api, _, tools
 from odoo.exceptions import ValidationError
+
 
 _logger = logging.getLogger(__name__)
 
@@ -31,10 +35,17 @@ class DashboardEngine(models.Model):
     @api.model
     def _get_github_base_url(self):
         """Get the base URL for GitHub repository."""
-        return self.env['ir.config_parameter'].sudo().get_param(
+        base_url = self.env['ir.config_parameter'].sudo().get_param(
             'odashboard.github_base_url', 
             'https://raw.githubusercontent.com/osolutionscompany/odashboard.engine/main/'
         )
+        
+        # SECURITY: Enforce HTTPS to prevent MITM attacks
+        if not base_url.startswith('https://'):
+            _logger.error("GitHub base URL must use HTTPS. Got: %s", base_url)
+            raise ValidationError(_("GitHub base URL must use HTTPS for security"))
+        
+        return base_url
     @api.model
     def _get_versions_url(self):
         """Get the URL for versions.json file."""
@@ -90,6 +101,92 @@ class DashboardEngine(models.Model):
         timestamp = fields.Datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         current_log = self.update_log or ''
         self.update_log = f"{current_log}\n[{timestamp}] {message}" if current_log else f"[{timestamp}] {message}"
+
+    def _get_safe_globals(self):
+        """
+        Create a restricted global namespace for engine code execution.
+
+        This provides necessary Python/Odoo modules while blocking dangerous operations.
+        Allows lambdas and closures (unlike safe_eval) but restricts system access.
+
+        Returns:
+            dict: Safe globals dictionary with allowed modules and limited builtins
+        """
+        # Allowed safe builtins - carefully selected to prevent system access
+        safe_builtins = {
+            # Type constructors
+            'dict': dict,
+            'list': list,
+            'tuple': tuple,
+            'set': set,
+            'frozenset': frozenset,
+            'str': str,
+            'int': int,
+            'float': float,
+            'bool': bool,
+            'bytes': bytes,
+
+            # Common functions
+            'len': len,
+            'range': range,
+            'enumerate': enumerate,
+            'zip': zip,
+            'map': map,
+            'filter': filter,
+            'sorted': sorted,
+            'reversed': reversed,
+            'sum': sum,
+            'min': min,
+            'max': max,
+            'abs': abs,
+            'round': round,
+            'any': any,
+            'all': all,
+
+            # String/iteration
+            'ord': ord,
+            'chr': chr,
+            'isinstance': isinstance,
+            'issubclass': issubclass,
+            'hasattr': hasattr,
+            'getattr': getattr,
+            'setattr': setattr,
+
+            # Type checks
+            'type': type,
+
+            # Exceptions (needed for error handling)
+            'Exception': Exception,
+            'ValueError': ValueError,
+            'TypeError': TypeError,
+            'KeyError': KeyError,
+            'AttributeError': AttributeError,
+            'IndexError': IndexError,
+
+            # None, True, False are automatically available
+            'None': None,
+            'True': True,
+            'False': False,
+        }
+
+        # Safe globals with necessary modules for engine execution
+        safe_globals = {
+            '__builtins__': safe_builtins,
+            '_logger': _logger,
+
+            # DateTime modules (needed by engine.py)
+            'datetime': datetime,
+            'timedelta': timedelta,
+            'relativedelta': relativedelta,
+            'pytz': pytz,
+
+            # Odoo SQL builder (needed for v1.0.1 security)
+            'SQL': tools.SQL,
+
+            # Note: We don't provide __import__, eval, exec, compile, open, or other dangerous functions
+        }
+
+        return safe_globals
 
     def check_for_updates(self):
         """
@@ -170,6 +267,19 @@ class DashboardEngine(models.Model):
             
             new_code = response.text
             
+            # SECURITY: Verify checksum if provided to prevent tampering
+            expected_checksum = version_info.get('sha256')
+            if expected_checksum:
+                actual_checksum = hashlib.sha256(new_code.encode('utf-8')).hexdigest()
+                if actual_checksum != expected_checksum:
+                    message = f"Checksum verification failed! Expected: {expected_checksum}, Got: {actual_checksum}. Possible tampering detected."
+                    _logger.error(message)
+                    self._add_to_log(message)
+                    return False
+                _logger.info("Checksum verification passed: %s", actual_checksum)
+            else:
+                _logger.warning("No checksum provided for version %s - cannot verify integrity", new_version)
+            
             # Validate Python syntax
             try:
                 ast.parse(new_code)
@@ -200,11 +310,49 @@ class DashboardEngine(models.Model):
             self._add_to_log(message)
             return False
 
-    def execute_engine_code(self, method_name, *args, **kwargs):
+    # def _compare_versions(self, version1, version2):
+    #     """
+    #     Compare two version strings.
+    #
+    #     Args:
+    #         version1: First version string (e.g., '1.0.1')
+    #         version2: Second version string (e.g., '1.0.0')
+    #
+    #     Returns:
+    #         int: 1 if version1 > version2, -1 if version1 < version2, 0 if equal
+    #     """
+    #     try:
+    #         v1_parts = [int(x) for x in version1.split('.')]
+    #         v2_parts = [int(x) for x in version2.split('.')]
+    #
+    #         # Pad with zeros if needed
+    #         max_len = max(len(v1_parts), len(v2_parts))
+    #         v1_parts.extend([0] * (max_len - len(v1_parts)))
+    #         v2_parts.extend([0] * (max_len - len(v2_parts)))
+    #
+    #         for v1, v2 in zip(v1_parts, v2_parts):
+    #             if v1 > v2:
+    #                 return 1
+    #             elif v1 < v2:
+    #                 return -1
+    #         return 0
+    #     except (ValueError, AttributeError):
+    #         _logger.warning(f"Invalid version format: {version1} or {version2}")
+    #         return 0
+
+    def _execute_engine_code(self, method_name, *args, **kwargs):
         """
-        Execute a method from the engine code.
+        PRIVATE: Execute a method from the engine code.
         If execution fails, fall back to the previous version.
-        In development mode, it will try to load code from the local file system first.
+
+        This method is private to prevent direct RPC calls with arbitrary method names.
+        Use execute_unified_request through the /api/odash/execute controller instead.
+
+        BACKWARD COMPATIBILITY:
+        - Version >= 1.0.1: Uses exec() with restricted namespace (supports lambdas)
+        - Version < 1.0.1: Uses basic exec() (legacy engines without lambdas)
+
+        SECURITY: Uses restricted namespace with limited builtins to prevent system access.
         """
         self.ensure_one()
         engine = self
@@ -213,60 +361,78 @@ class DashboardEngine(models.Model):
         if not code:
             _logger.error("No engine code available")
             return {'error': _('No engine code available')}
-        
+
+        # Determine execution method based on version
+        current_version = engine.version or '1.0.0'
+        use_safe_namespace = current_version >= '1.0.1'
+
         # Try to execute the current code
         try:
-            shared_namespace = {}
-            
-            # Execute the code in the shared namespace
-            exec(code, shared_namespace, shared_namespace)
-            # Check if the method exists in the namespace
-            if method_name in shared_namespace:
-                func = shared_namespace[method_name]
-                result = func(*args, **kwargs)
-                return result
+            if use_safe_namespace:
+                # v1.0.1+: Use restricted namespace (supports lambdas/closures)
+                safe_globals = self._get_safe_globals()
+                exec(code, safe_globals, safe_globals)
+
+                if method_name in safe_globals:
+                    func = safe_globals[method_name]
+                    result = func(*args, **kwargs)
+                    return result
+                else:
+                    _logger.error(f"Method '{method_name}' not found in engine code")
+                    return {'error': f"Method '{method_name}' not found in engine code"}
             else:
-                _logger.error(f"Method '{method_name}' not found in engine code")
-                return {'error': f"Method '{method_name}' not found in engine code"}
-                
+                # v1.0.0: Basic execution for legacy engines
+                # Legacy engines don't use lambdas, so basic namespace is sufficient
+                namespace = {'_logger': _logger}
+                exec(code, namespace, namespace)
+
+                if method_name in namespace:
+                    func = namespace[method_name]
+                    _logger.info(f"Executing legacy engine method '{method_name}'")
+                    result = func(*args, **kwargs)
+                    return result
+                else:
+                    _logger.error(f"Method '{method_name}' not found in legacy engine code")
+                    return {'error': f"Method '{method_name}' not found in engine code"}
+
         except Exception as e:
             _logger.exception(f"Error executing '{method_name}': {str(e)}")
-            
+
             # Try with previous code as a fallback
             if engine.previous_code and engine.previous_code != code:
                 try:
                     _logger.info(f"Attempting fallback execution of '{method_name}'")
-                    
-                    # Create a shared namespace for fallback
-                    fallback_namespace = {}
-                    
-                    # Execute the previous code with shared namespace
-                    exec(engine.previous_code, fallback_namespace, fallback_namespace)
-                    
-                    # Check if the method exists in the fallback namespace
-                    if method_name in fallback_namespace:
-                        func = fallback_namespace[method_name]
+
+                    # Use safe namespace for fallback (assumes previous version also modern)
+                    safe_globals_fallback = self._get_safe_globals()
+                    exec(engine.previous_code, safe_globals_fallback, safe_globals_fallback)
+
+                    if method_name in safe_globals_fallback:
+                        func = safe_globals_fallback[method_name]
                         result = func(*args, **kwargs)
                     else:
                         return {'error': f"Method '{method_name}' not found in fallback code"}
-                
+
                     # Log the fallback
                     self._add_to_log(f"Executed '{method_name}' using fallback code due to error: {str(e)}")
-                    
+
                     return result
-                    
+
                 except Exception as fallback_error:
                     _logger.exception(f"Error executing fallback for '{method_name}': {str(fallback_error)}")
                     return {'error': f"Error in engine execution: {str(e)}. Fallback also failed: {str(fallback_error)}"}
-            
+
             return {'error': f"Error in engine execution: {str(e)}"}
 
-    def execute_unified_request(self, action, parameters, env, request=None):
+    def _execute_unified_request(self, action, parameters, env, request=None):
         """
-        Unified request dispatcher that routes requests to appropriate engine methods.
+        PRIVATE: Unified request dispatcher that routes requests to appropriate engine methods.
         
         This method dynamically dispatches requests to the engine without requiring
         hardcoded action mappings, making it fully extensible through engine updates.
+        
+        This method is private to prevent direct RPC calls. It enforces action whitelisting
+        through get_action_config or _get_legacy_action_config.
         
         Args:
             action (str): The action to perform (method name in engine)
@@ -282,7 +448,7 @@ class DashboardEngine(models.Model):
         try:
             # First, try to get action configuration from the engine itself
             # This allows the engine to define its own action mappings
-            engine_config = self.execute_engine_code('get_action_config', action)
+            engine_config = self._execute_engine_code('get_action_config', action)
             
             if engine_config and engine_config.get('success'):
                 # Engine provides action configuration
@@ -315,13 +481,13 @@ class DashboardEngine(models.Model):
                     return validation_error
             
             # Execute the engine method
-            result = self.execute_engine_code(method_name, *args)
+            result = self._execute_engine_code(method_name, *args)
             
             # Standardize the response format
             return self._standardize_response(result)
                 
         except Exception as e:
-            _logger.exception("Error in execute_unified_request: %s", e)
+            _logger.exception("Error in _execute_unified_request: %s", e)
             return {
                 'success': False,
                 'error': str(e)
@@ -374,10 +540,6 @@ class DashboardEngine(models.Model):
                 'method': 'get_model_fields', 
                 'args': [parameters.get('model_name'), env]
             },
-            'get_model_records': {
-                'method': 'get_model_records',
-                'args': [parameters.get('model_name'), parameters, env]
-            },
             'get_model_search': {
                 'method': 'get_model_search',
                 'args': [parameters.get('model_name'), parameters, request]
@@ -392,7 +554,7 @@ class DashboardEngine(models.Model):
 
     def _validate_legacy_parameters(self, action, parameters):
         """Validate parameters for legacy actions."""
-        if action in ['get_model_fields', 'get_model_records', 'get_model_search'] and not parameters.get('model_name'):
+        if action in ['get_model_fields', 'get_model_search'] and not parameters.get('model_name'):
             return {'success': False, 'error': _("Missing required parameter: model_name")}
         elif action == 'process_dashboard_request' and not parameters.get('request_data'):
             return {'success': False, 'error': _("Missing required parameter: request_data")}

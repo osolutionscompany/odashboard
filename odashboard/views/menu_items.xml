@@ -44,7 +44,7 @@
                   sequence="15"
         />
         
-        <menuitem name="Pages"
+        <menuitem name="My pages"
                   groups="odashboard.group_odashboard_editor,base.group_system"
                   id="menu_odash_config_root"
                   action="action_odash_config"
