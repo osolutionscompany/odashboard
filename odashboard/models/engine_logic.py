@@ -1,0 +1,1441 @@
+# -*- coding: utf-8 -*-
+"""
+Dashboard Engine Logic
+
+This module contains all the business logic for processing dashboard visualizations.
+Previously this code was dynamically loaded from an external source and executed
+with safe_eval/exec. Now it's embedded directly in the module for better reliability,
+debugging, and maintenance.
+
+Functions:
+    - get_user_context: Get user locale/timezone settings
+    - get_models: List available Odoo models for analytics
+    - get_model_fields: Get field information for a model
+    - get_model_search: Search records in a model
+    - process_dashboard_request: Main entry point for dashboard data requests
+"""
+import logging
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
+import pytz
+
+from odoo import tools
+
+_logger = logging.getLogger(__name__)
+
+# Use Odoo's SQL builder for secure query construction
+SQL = tools.SQL
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+def _has_company_field(model):
+    """
+    Check if a model has company_id or company_ids field
+
+    Args:
+        model: Odoo model object
+
+    Returns:
+        str or False: 'company_id', 'company_ids', or False if no company field
+    """
+    if 'company_id' in model._fields:
+        return 'company_id'
+    elif 'company_ids' in model._fields:
+        return 'company_ids'
+    return False
+
+
+def _apply_company_filtering(domain, model, env):
+    """
+    Apply company filtering to a domain if the model has company_id or company_ids field
+
+    Args:
+        domain: Existing domain filter
+        model: Odoo model object
+        env: Odoo environment
+
+    Returns:
+        list: Domain with company filtering applied
+    """
+    company_field = _has_company_field(model)
+    if not company_field:
+        _logger.debug("Model %s has no company field, skipping company filtering", model._name)
+        return domain
+
+    try:
+        dashboard = env.context.get('dashboard_id')
+        if not dashboard or not dashboard.allowed_company_ids:
+            _logger.debug("No company filtering applied - no dashboard or allowed companies")
+            return domain
+
+        company_ids = dashboard.allowed_company_ids.ids
+        _logger.info("Applying company filter for companies: %s on field: %s", company_ids, company_field)
+
+        # Create appropriate domain based on field type
+        company_domain = []
+        if company_field == 'company_id':
+            # Many2one field: records with no company OR records with allowed company
+            company_domain = ['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]
+        elif company_field == 'company_ids':
+            # Many2many field: records with no companies OR records with any allowed company
+            company_domain = ['|', ('company_ids', '=', False), ('company_ids', 'in', company_ids)]
+
+        # Combine existing domain with company domain
+        if domain:
+            return domain + company_domain
+        else:
+            return company_domain
+
+    except Exception as e:
+        _logger.warning("Error applying company filtering: %s", e)
+        return domain
+
+
+def _enrich_group_by_with_labels(group_by_list, model):
+    """Enrich groupBy objects with field labels for frontend display."""
+    if not group_by_list:
+        return group_by_list
+
+    enriched_group_by = []
+    for gb in group_by_list:
+        enriched_gb = gb.copy()
+        field_name = gb.get('field')
+        if field_name:
+            field_info = model._fields.get(field_name)
+            if field_info:
+                enriched_gb['label'] = field_info.string or field_name.replace('_', ' ').title()
+            else:
+                enriched_gb['label'] = field_name.replace('_', ' ').title()
+        enriched_group_by.append(enriched_gb)
+
+    return enriched_group_by
+
+
+def _format_datetime_value(value, field_type, lang=None, user_timezone=None):
+    """
+    Format date/datetime values with locale and Odoo user timezone support for data tables
+
+    Args:
+        value: The datetime/date value from database
+        field_type: 'date' or 'datetime'
+        lang: Odoo res.lang record
+        user_timezone: User timezone from env.user.tz (e.g., 'Europe/Paris', 'America/New_York')
+
+    Returns:
+        Formatted string optimized for table display with locale and timezone support
+    """
+    if not value:
+        return value
+
+    try:
+        # Parse the datetime value
+        if isinstance(value, str):
+            dt = datetime.fromisoformat(value.replace('T', ' ').replace('Z', ''))
+        elif hasattr(value, 'strftime'):
+            dt = value
+        else:
+            return str(value)
+
+        # Convert to user's timezone if provided and it's a datetime field
+        if field_type == 'datetime' and user_timezone:
+            try:
+                # Assume database datetime is in UTC if no timezone info
+                if dt.tzinfo is None:
+                    dt = pytz.UTC.localize(dt)
+
+                # Convert to user's timezone
+                user_tz = pytz.timezone(user_timezone)
+                dt = dt.astimezone(user_tz)
+            except Exception as e:
+                _logger.warning("Error converting timezone for %s to %s: %s", dt, user_timezone, e)
+                # Continue with original datetime if timezone conversion fails
+
+        # Use Odoo language record formatting if available
+        if lang and hasattr(lang, 'date_format'):
+            try:
+                if field_type == 'datetime':
+                    # Combine date_format with short_time_format for datetime
+                    date_fmt = lang.date_format or '%m/%d/%Y'
+                    time_fmt = lang.short_time_format or '%H:%M'
+                    combined_fmt = f"{date_fmt} {time_fmt}"
+                    return dt.strftime(combined_fmt)
+                else:
+                    # Use only date_format for date fields
+                    date_fmt = lang.date_format or '%m/%d/%Y'
+                    return dt.strftime(date_fmt)
+            except Exception as e:
+                _logger.warning("Error using Odoo language format %s: %s", lang.date_format if lang else 'None', e)
+                # Fall through to default formatting
+
+        # Fallback to default formatting if no language record or formatting fails
+        if field_type == 'datetime':
+            return dt.strftime('%d/%m/%Y %H:%M')  # Default European format
+        else:
+            return dt.strftime('%d/%m/%Y')
+
+    except Exception as e:
+        _logger.warning("Error formatting datetime value %s: %s", value, e)
+        return str(value)
+
+
+# =============================================================================
+# Public API Functions
+# =============================================================================
+
+def get_user_context(env):
+    """
+    Get current user's context information for cache invalidation
+
+    Args:
+        env: Odoo environment from the request
+
+    Returns:
+        Dictionary with user language, timezone, and date format settings
+    """
+    try:
+        user = env.user
+
+        # Get user language record
+        user_lang_code = user.lang if hasattr(user, 'lang') else 'en_US'
+        lang_record = env['res.lang']._lang_get(user_lang_code) if user_lang_code else None
+
+        # Get user timezone
+        user_timezone = user.tz if hasattr(user, 'tz') else 'UTC'
+
+        # Prepare user context data
+        context_data = {
+            'lang': user_lang_code,
+            'tz': user_timezone,
+            'date_format': lang_record.date_format if lang_record and hasattr(lang_record,
+                                                                              'date_format') else '%m/%d/%Y',
+            'time_format': lang_record.short_time_format if lang_record and hasattr(lang_record,
+                                                                                    'short_time_format') else '%H:%M'
+        }
+
+        return {'success': True, 'data': context_data}
+
+    except Exception as e:
+        _logger.error("Error in get_user_context: %s", str(e))
+        return {'success': False, 'error': str(e)}
+
+
+def get_models(env):
+    """
+    Return a list of models relevant for analytics, automatically filtering out technical models
+
+    Args:
+        env: Odoo environment from the request
+
+    Returns:
+        List of analytically relevant models with name and model attributes
+    """
+    try:
+        # Create domain to filter models directly in the search
+        # 1. Must be non-transient
+        domain = [('transient', '=', False)]
+
+        # 2. Exclude technical models using NOT LIKE conditions
+        technical_prefixes = ['ir.', 'base.', 'bus.', 'base_import.',
+                              'web.', 'auth.', 'wizard.']
+
+        for prefix in technical_prefixes:
+            domain.append(('model', 'not like', f'{prefix}%'))
+
+        # Models starting with underscore
+        domain.append(('model', 'not like', '\\_%'))
+
+        # Execute the optimized search
+        model_obj = env['ir.model'].sudo()
+        models = model_obj.search(domain)
+
+        # Format the response with the already filtered models
+        model_list = [{
+            'name': model.name,
+            'model': model.model,
+        } for model in models]
+
+        return {'success': True, 'data': model_list}
+
+    except Exception as e:
+        _logger.error("Error in get_models: %s", str(e))
+        return {'success': False, 'error': str(e)}
+
+
+def get_model_fields(model_name, env):
+    """
+    Retrieve information about the fields of a specific Odoo model.
+
+    :param model_name: Name of the Odoo model (example: 'sale.order')
+    :param env: Odoo environment
+    :return: JSON with information about the model's fields
+    """
+    try:
+        _logger.info("API call: Fetching fields info for model: %s", model_name)
+
+        # Check if the model exists
+        if model_name not in env:
+            return {'success': False, 'error': f"Model '{model_name}' not found"}
+
+        # Get field information
+        model_obj = env[model_name].sudo()
+        fields_info = _get_fields_info(model_obj)
+
+        return {'success': True, 'data': fields_info}
+
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def get_model_search(model_name, kw, request):
+    """
+    Search records of a specific model with pagination.
+
+    Args:
+        model_name: Name of the Odoo model
+        kw: Keyword arguments containing search parameters
+        request: HTTP request object
+
+    Returns:
+        List of matching records
+    """
+    search = kw.get('search', '')
+    page = int(kw.get('page', 1))
+    limit = 50
+
+    domain = []
+
+    if search:
+        domain.append(('name', 'ilike', search))
+
+    # Get model and apply company filtering
+    model = request.env[model_name].sudo()
+    domain = _apply_company_filtering(domain, model, request.env)
+
+    records = model.search(domain, limit=limit, offset=(page - 1) * limit)
+    record_list = []
+    for record in records:
+        record_list.append({
+            'id': record.id,
+            'name': record.name,
+        })
+
+    return {'success': True, 'data': record_list}
+
+
+def _get_fields_info(model):
+    """
+    Get information about all fields of an Odoo model.
+
+    :param model: Odoo model object
+    :return: List of field information
+    """
+    fields_info = []
+
+    # Get fields from the model
+    fields_data = model.fields_get()
+
+    for field_name, field_data in fields_data.items():
+        field_type = field_data.get('type', 'unknown')
+
+        # Check if it's a computed field that's not stored
+        field_obj = model._fields.get(field_name)
+        if field_obj and field_obj.compute and not field_obj.store:
+            _logger.debug("Skipping non-stored computed field: %s", field_name)
+            continue
+
+        # Create field info object for response
+        field_info = {
+            'field': field_name,
+            'name': field_data.get('string', field_name),
+            'type': field_type,
+            'label': field_data.get('string', field_name),
+            'value': field_name,
+            'search': f"{field_name} {field_data.get('string', field_name)}"
+        }
+
+        if field_obj and field_obj.comodel_name:
+            field_info['model'] = field_obj.comodel_name
+
+        # Add selection options if field is a selection
+        if field_data.get('type') == 'selection' and 'selection' in field_data:
+            field_info['selection'] = [
+                {'value': value, 'label': label}
+                for value, label in field_data['selection']
+            ]
+
+        fields_info.append(field_info)
+
+    # Sort fields by name for better readability
+    fields_info.sort(key=lambda x: x['name'])
+
+    return fields_info
+
+
+# =============================================================================
+# Block Processing
+# =============================================================================
+
+def _process_block(model, domain, config, env=None):
+    """Process block type visualization (single value aggregation)."""
+    block_options = config.get('block_options', {})
+    field = block_options.get('field')
+    aggregation = block_options.get('aggregation', 'sum')
+    label = block_options.get('label', field)
+
+    if not field:
+        return {'error': 'Missing field in block_options'}
+
+    # Apply company filtering if env is provided
+    if env:
+        domain = _apply_company_filtering(domain, model, env)
+
+    # Count total records for metadata
+    total_count = model.search_count(domain)
+
+    # Compute the aggregated value
+    if aggregation == 'count':
+        return {
+            'data': {
+                'value': total_count,
+                'label': label or 'Count',
+                '__domain': []
+            },
+            'metadata': {
+                'total_count': total_count
+            }
+        }
+    else:
+        # For sum, avg, min, max
+        try:
+            # Use SQL for better performance on large datasets
+            agg_func = aggregation.upper()
+
+            # Build the WHERE clause and parameters securely
+            if not domain:
+                where_clause = SQL("TRUE")
+            else:
+                # Use search to get the query - safer and more robust
+                records = model.search(domain)
+                if not records:
+                    where_clause = SQL("FALSE")
+                else:
+                    id_list = records.ids
+                    where_clause = SQL("%s.id IN %s", SQL.identifier(model._table),
+                                       tuple(id_list) if len(id_list) > 1 else (id_list[0],))
+
+            # More reliable and unified solution for all aggregations
+            try:
+                # Count query
+                count_query = SQL(
+                    "SELECT COUNT(*) as count FROM %s WHERE %s",
+                    SQL.identifier(model._table),
+                    SQL(where_clause)
+                )
+                model.env.cr.execute(count_query)
+                count_result = model.env.cr.fetchone()
+                count = 0
+                if count_result and len(count_result) > 0:
+                    count = count_result[0] if count_result[0] is not None else 0
+
+                _logger.info("Found %s records matching the criteria", count)
+
+                # If no records, return 0 for all aggregations
+                if count == 0:
+                    value = 0
+                    _logger.info("No records found, using default value 0")
+                else:
+                    # Calculate aggregation based on type
+                    if agg_func == 'AVG':
+                        sum_query = SQL(
+                            "SELECT SUM(%s) as total FROM %s WHERE %s",
+                            SQL.identifier(field),
+                            SQL.identifier(model._table),
+                            SQL(where_clause)
+                        )
+                        model.env.cr.execute(sum_query)
+                        sum_result = model.env.cr.fetchone()
+                        total = 0
+
+                        if sum_result and len(sum_result) > 0:
+                            total = sum_result[0] if sum_result[0] is not None else 0
+
+                        value = total / count if count > 0 else 0
+                        _logger.info("Calculated AVG manually: total=%s, count=%s, avg=%s", total, count, value)
+                    elif agg_func == 'MAX':
+                        max_query = SQL(
+                            "SELECT %s as max_value FROM %s WHERE %s AND %s IS NOT NULL ORDER BY %s DESC LIMIT 1",
+                            SQL.identifier(field),
+                            SQL.identifier(model._table),
+                            SQL(where_clause),
+                            SQL.identifier(field),
+                            SQL.identifier(field)
+                        )
+                        model.env.cr.execute(max_query)
+                        max_result = model.env.cr.fetchone()
+                        value = 0
+
+                        if max_result and len(max_result) > 0:
+                            value = max_result[0] if max_result[0] is not None else 0
+
+                        _logger.info("Calculated MAX manually: %s", value)
+                    elif agg_func == 'MIN':
+                        min_query = SQL(
+                            "SELECT %s as min_value FROM %s WHERE %s AND %s IS NOT NULL ORDER BY %s ASC LIMIT 1",
+                            SQL.identifier(field),
+                            SQL.identifier(model._table),
+                            SQL(where_clause),
+                            SQL.identifier(field),
+                            SQL.identifier(field)
+                        )
+                        model.env.cr.execute(min_query)
+                        min_result = model.env.cr.fetchone()
+                        value = 0
+
+                        if min_result and len(min_result) > 0:
+                            value = min_result[0] if min_result[0] is not None else 0
+
+                        _logger.info("Calculated MIN manually: %s", value)
+                    elif agg_func == 'SUM':
+                        sum_query = SQL(
+                            "SELECT SUM(%s) as total FROM %s WHERE %s",
+                            SQL.identifier(field),
+                            SQL.identifier(model._table),
+                            SQL(where_clause)
+                        )
+                        model.env.cr.execute(sum_query)
+                        sum_result = model.env.cr.fetchone()
+                        value = 0
+
+                        if sum_result and len(sum_result) > 0:
+                            value = sum_result[0] if sum_result[0] is not None else 0
+
+                        _logger.info("Calculated SUM manually: %s", value)
+                    else:
+                        # Unrecognized aggregation function
+                        value = 0
+            except Exception as e:
+                _logger.exception("Error calculating %s for %s: %s", agg_func, field, e)
+                value = 0
+
+            return {
+                'data': {
+                    'value': value,
+                    'label': label or f'{aggregation.capitalize()} of {field}',
+                    '__domain': []
+                }
+            }
+        except Exception as e:
+            _logger.error("Error calculating block value: %s", e)
+            return {'error': f'Error calculating {aggregation} for {field}: {str(e)}'}
+
+
+# =============================================================================
+# Table Processing
+# =============================================================================
+
+def _process_table(model, domain, group_by_list, order_string, config, env=None):
+    """Process table type visualization."""
+    table_options = config.get('table_options', {})
+    columns = table_options.get('columns', [])
+    limit = table_options.get('limit', 50)
+    offset = table_options.get('offset', 0)
+
+    if not columns:
+        return {'error': 'Missing columns configuration for table'}
+
+    # Apply company filtering if env is provided
+    if env:
+        domain = _apply_company_filtering(domain, model, env)
+
+    # Extract fields to read
+    fields_to_read = [col.get('field') for col in columns if col.get('field')]
+
+    # Simple table - use search_read
+    try:
+        # Count total records for pagination
+        total_count = model.search_count(domain)
+
+        if group_by_list:
+            table_options = config.get('table_options', {})
+            measures = table_options.get('columns', [])
+
+            if not measures:
+                # Default to count measure if not specified
+                measures = [{'field': 'id', 'aggregation': 'count'}]
+
+            measure_fields = []
+            for measure in measures:
+                measure_fields.append(f"{measure.get('field')}:{measure.get('aggregation', 'sum')}")
+
+            # Prepare groupby fields for read_group
+            groupby_fields = []
+
+            for gb in group_by_list:
+                field = gb.get('field')
+                interval = gb.get('interval') if gb.get('interval') != 'auto' else 'month'
+                if field:
+                    groupby_fields.append(f"{field}:{interval}" if interval else field)
+
+            results = model.read_group(
+                domain,
+                fields=measure_fields,
+                groupby=groupby_fields,
+                orderby=order_string,
+                lazy=False
+            )
+
+            # Check if we should show empty values for the first group by
+            show_empty = group_by_list[0].get('show_empty', False) if group_by_list else False
+
+            if show_empty:
+                if ':' in groupby_fields[0]:
+                    results = complete_missing_date_intervals(results)
+                else:
+                    results = complete_missing_selection_values(results, model, groupby_fields[0])
+            else:
+                # Filter out empty values when show_empty is False
+                results = [result for result in results if any(
+                    isinstance(v, (int, float)) and v > 0
+                    for k, v in result.items()
+                    if k not in ['__domain', '__range'] and not k.startswith('__')
+                )]
+
+            transformed_data = []
+            for result in results:
+                data = {
+                    'key': result[groupby_fields[0]][1] if isinstance(result[groupby_fields[0]],
+                                                                      tuple) or isinstance(
+                        result[groupby_fields[0]], list) else result[groupby_fields[0]],
+                    '__domain': result['__domain']
+                }
+
+                for measure in measures:
+                    data[measure['field']] = result[measure['field']]
+
+                transformed_data.append(data)
+        else:
+            transformed_data = model.search_read(
+                domain,
+                fields=fields_to_read,
+                limit=limit,
+                offset=offset,
+                order=order_string
+            )
+
+            for data in transformed_data:
+                data['__domain'] = []
+                for key in data.keys():
+                    if isinstance(data[key], tuple):
+                        data[key] = data[key][1]
+                    # Format date/datetime fields for display
+                    elif key in fields_to_read:
+                        field_info = model._fields.get(key)
+                        if field_info and field_info.type in ['date', 'datetime'] and data[key]:
+                            # Get user timezone from Odoo user profile
+                            user_timezone = model.env.user.tz if hasattr(model.env.user, 'tz') else None
+                            # Detect user locale for proper date formatting
+                            user_lang = model.env.user.lang if hasattr(model.env.user, 'lang') else None
+                            lang = model.env['res.lang']._lang_get(user_lang)
+                            data[key] = _format_datetime_value(data[key], field_info.type, lang, user_timezone)
+
+        return {
+            'data': transformed_data,
+            'metadata': {
+                'page': offset // limit + 1 if limit else 1,
+                'limit': limit,
+                'total_count': total_count
+            }
+        }
+
+    except Exception as e:
+        _logger.exception("Error in _process_table: %s", e)
+        return {'error': f'Error processing table: {str(e)}'}
+
+
+# =============================================================================
+# Graph Processing
+# =============================================================================
+
+def _prepare_groupby_fields(group_by_list):
+    """Prepare groupby fields for read_group operation."""
+    groupby_fields = []
+    for gb in group_by_list:
+        field = gb.get('field')
+        interval = gb.get('interval') if gb.get('interval') != 'auto' else 'month'
+        if field:
+            groupby_fields.append(f"{field}:{interval}" if interval else field)
+    return groupby_fields
+
+
+def _prepare_measures(measures, model):
+    """
+    Prepare measures for read_group, separating regular fields from relational fields.
+
+    Supports advanced aggregations (SUM/AVG/MIN/MAX) on relational fields when 'related_field' is specified.
+
+    Returns:
+        tuple: (measure_fields, relational_measures) where:
+            - measure_fields: List of fields ready for read_group
+            - relational_measures: List of One2many/Many2many measures for special handling
+    """
+    measure_fields = []
+    relational_measures = []
+
+    for measure in measures:
+        field_name = measure.get('field')
+        aggregation = measure.get('aggregation', 'sum')
+        related_field = measure.get('related_field')
+
+        # Check if field exists and can be used in read_group
+        if field_name in model._fields:
+            field_info = model._fields[field_name]
+            field_type = field_info.type
+
+            # Handle relational fields specially
+            if field_type in ['one2many', 'many2many']:
+                # Validate aggregation type for relational fields
+                if aggregation in ['count', 'count_distinct']:
+                    relational_measures.append({
+                        **measure,
+                        'field_type': field_type,
+                        'field_info': field_info
+                    })
+                    _logger.info(f"{field_type.title()} field '{field_name}' will be handled with special {aggregation} logic")
+                    continue
+
+                elif aggregation in ['sum', 'avg', 'min', 'max']:
+                    if not related_field:
+                        _logger.warning(f"Skipping field '{field_name}' - {aggregation} aggregation on {field_type} requires 'related_field' parameter")
+                        continue
+
+                    # Validate that related_field exists on the related model
+                    try:
+                        related_model = model.env[field_info.comodel_name]
+                        if related_field not in related_model._fields:
+                            _logger.warning(f"Skipping field '{field_name}' - related_field '{related_field}' not found on model '{field_info.comodel_name}'")
+                            continue
+
+                        related_field_info = related_model._fields[related_field]
+                        if aggregation in ['sum', 'avg'] and related_field_info.type not in ['integer', 'float', 'monetary']:
+                            _logger.warning(f"Skipping field '{field_name}' - {aggregation} aggregation requires numeric related_field, got '{related_field_info.type}'")
+                            continue
+
+                        relational_measures.append({
+                            **measure,
+                            'field_type': field_type,
+                            'field_info': field_info,
+                            'related_field': related_field,
+                            'related_field_info': related_field_info
+                        })
+                        _logger.info(f"{field_type.title()} field '{field_name}' will be handled with {aggregation}({related_field}) logic")
+                        continue
+
+                    except Exception as e:
+                        _logger.warning(f"Error validating related_field for '{field_name}': {e}")
+                        continue
+                else:
+                    _logger.warning(f"Skipping field '{field_name}' - unsupported aggregation '{aggregation}' for {field_type} fields")
+                    continue
+
+        measure_fields.append(f"{field_name}:{aggregation}")
+
+    return measure_fields, relational_measures
+
+
+def _build_relational_metadata(relational_measures, model):
+    """Build metadata for relational fields to optimize query generation."""
+    field_metadata = {}
+
+    for measure in relational_measures:
+        field_name = measure.get('field')
+        field_info = measure['field_info']
+        field_type = measure['field_type']
+        aggregation = measure.get('aggregation', 'count')
+        related_field = measure.get('related_field')
+
+        if field_type == 'one2many':
+            related_model_name = field_info.comodel_name
+            foreign_key = field_info.inverse_name
+            related_model = model.env[related_model_name]
+
+            field_metadata[field_name] = {
+                'field_type': 'one2many',
+                'related_model': related_model,
+                'foreign_key': foreign_key,
+                'table_name': related_model._table,
+                'aggregation': aggregation,
+                'related_field': related_field,
+                'related_field_info': measure.get('related_field_info')
+            }
+
+        elif field_type == 'many2many':
+            related_model_name = field_info.comodel_name
+            relation_table = field_info.relation
+            column1 = field_info.column1
+            column2 = field_info.column2
+            related_model = model.env[related_model_name]
+
+            field_metadata[field_name] = {
+                'field_type': 'many2many',
+                'related_model': related_model,
+                'relation_table': relation_table,
+                'column1': column1,
+                'column2': column2,
+                'related_table_name': related_model._table,
+                'aggregation': aggregation,
+                'related_field': related_field,
+                'related_field_info': measure.get('related_field_info')
+            }
+
+    return field_metadata
+
+
+def _build_relational_query(metadata, record_ids_tuple):
+    """
+    Build optimized SQL query for relational field aggregations.
+
+    Supports: COUNT, COUNT_DISTINCT, SUM, AVG, MIN, MAX on relational fields.
+    """
+    aggregation = metadata.get('aggregation', 'count')
+    related_field = metadata.get('related_field')
+
+    if metadata['field_type'] == 'one2many':
+        table = metadata['table_name']
+        foreign_key = metadata['foreign_key']
+
+        if aggregation == 'count':
+            query = SQL(
+                "SELECT COUNT(*) FROM %s WHERE %s IN %%s",
+                SQL.identifier(table),
+                SQL.identifier(foreign_key)
+            )
+        elif aggregation == 'count_distinct':
+            query = SQL(
+                "SELECT COUNT(DISTINCT id) FROM %s WHERE %s IN %%s",
+                SQL.identifier(table),
+                SQL.identifier(foreign_key)
+            )
+        elif aggregation in ['sum', 'avg', 'min', 'max'] and related_field:
+            agg_func = aggregation.upper()
+            query = SQL(
+                "SELECT %s(%s) FROM %s WHERE %s IN %%s",
+                SQL(agg_func),
+                SQL.identifier(related_field),
+                SQL.identifier(table),
+                SQL.identifier(foreign_key)
+            )
+        else:
+            query = SQL(
+                "SELECT COUNT(*) FROM %s WHERE %s IN %%s",
+                SQL.identifier(table),
+                SQL.identifier(foreign_key)
+            )
+
+        return query
+
+    else:  # many2many
+        relation_table = metadata['relation_table']
+        related_table = metadata['related_table_name']
+        column1 = metadata['column1']
+        column2 = metadata['column2']
+
+        if aggregation == 'count':
+            query = SQL(
+                "SELECT COUNT(*) FROM %s WHERE %s IN %%s",
+                SQL.identifier(relation_table),
+                SQL.identifier(column1)
+            )
+
+        elif aggregation == 'count_distinct':
+            query = SQL(
+                "SELECT COUNT(DISTINCT %s) FROM %s WHERE %s IN %%s",
+                SQL.identifier(column2),
+                SQL.identifier(relation_table),
+                SQL.identifier(column1)
+            )
+
+        elif aggregation in ['sum', 'avg', 'min', 'max'] and related_field:
+            agg_func = aggregation.upper()
+            query = SQL(
+                "SELECT %s(rt.%s) FROM %s rel JOIN %s rt ON rel.%s = rt.id WHERE rel.%s IN %%s",
+                SQL(agg_func),
+                SQL.identifier(related_field),
+                SQL.identifier(relation_table),
+                SQL.identifier(related_table),
+                SQL.identifier(column2),
+                SQL.identifier(column1)
+            )
+        else:
+            query = SQL(
+                "SELECT COUNT(*) FROM %s WHERE %s IN %%s",
+                SQL.identifier(relation_table),
+                SQL.identifier(column1)
+            )
+
+        return query
+
+
+def _execute_relational_query(query, record_ids_tuple, model, field_name, metadata=None):
+    """Execute relational query with fallback to ORM if SQL fails."""
+    try:
+        model.env.cr.execute(query, (record_ids_tuple,))
+        result = model.env.cr.fetchone()[0]
+        return result if result is not None else 0
+    except Exception as e:
+        _logger.warning(f"SQL query failed for {field_name}, falling back to ORM: {e}")
+
+        if metadata:
+            return _execute_orm_fallback(record_ids_tuple, model, field_name, metadata)
+        else:
+            group_records = model.browse(list(record_ids_tuple))
+            field_data = group_records.read([field_name])
+            return sum([len(data.get(field_name, [])) for data in field_data])
+
+
+def _execute_orm_fallback(record_ids_tuple, model, field_name, metadata):
+    """Execute ORM fallback for advanced relational aggregations."""
+    aggregation = metadata.get('aggregation', 'count')
+    related_field = metadata.get('related_field')
+
+    try:
+        group_records = model.browse(list(record_ids_tuple))
+
+        if aggregation == 'count':
+            field_data = group_records.read([field_name])
+            return sum([len(data.get(field_name, [])) for data in field_data])
+
+        elif aggregation == 'count_distinct':
+            all_related_ids = set()
+            for record in group_records:
+                related_records = getattr(record, field_name, [])
+                all_related_ids.update(related_records.ids)
+            return len(all_related_ids)
+
+        elif aggregation in ['sum', 'avg', 'min', 'max'] and related_field:
+            all_values = []
+
+            for record in group_records:
+                related_records = getattr(record, field_name, [])
+                for related_record in related_records:
+                    value = getattr(related_record, related_field, None)
+                    if value is not None:
+                        all_values.append(value)
+
+            if not all_values:
+                return 0
+
+            if aggregation == 'sum':
+                return sum(all_values)
+            elif aggregation == 'avg':
+                return sum(all_values) / len(all_values)
+            elif aggregation == 'min':
+                return min(all_values)
+            elif aggregation == 'max':
+                return max(all_values)
+
+        field_data = group_records.read([field_name])
+        return sum([len(data.get(field_name, [])) for data in field_data])
+
+    except Exception as e:
+        _logger.error(f"ORM fallback failed for {field_name}: {e}")
+        return 0
+
+
+def _compute_relational_aggregates(results, relational_measures, model):
+    """Compute aggregates for One2many and Many2many fields using optimized SQL queries."""
+    if not relational_measures:
+        return results
+
+    field_metadata = _build_relational_metadata(relational_measures, model)
+
+    for result in results:
+        group_domain = result.get('__domain', [])
+        group_record_ids = model.search(group_domain, order='id').ids
+
+        if not group_record_ids:
+            for measure in relational_measures:
+                result[measure.get('field')] = 0
+            continue
+
+        record_ids_tuple = tuple(group_record_ids)
+
+        measures_by_table = {}
+        for measure in relational_measures:
+            field_name = measure.get('field')
+            metadata = field_metadata[field_name]
+
+            table_key = metadata.get('table_name') or metadata.get('relation_table')
+
+            if table_key not in measures_by_table:
+                measures_by_table[table_key] = []
+            measures_by_table[table_key].append((field_name, metadata))
+
+        for table_key, table_measures in measures_by_table.items():
+            for field_name, metadata in table_measures:
+                query = _build_relational_query(metadata, record_ids_tuple)
+                total_count = _execute_relational_query(query, record_ids_tuple, model, field_name, metadata)
+                result[field_name] = total_count
+
+    return results
+
+
+def _apply_show_empty(results, group_by_list, groupby_fields, model):
+    """Apply show_empty logic to results."""
+    if not group_by_list or not groupby_fields:
+        return results
+
+    show_empty = group_by_list[0].get('show_empty', False)
+
+    if show_empty:
+        if ':' in groupby_fields[0]:
+            results = complete_missing_date_intervals(results)
+        else:
+            results = complete_missing_selection_values(results, model, groupby_fields[0])
+    else:
+        results = [result for result in results if any(
+            isinstance(v, (int, float)) and v > 0
+            for k, v in result.items()
+            if k not in ['__domain', '__range'] and not k.startswith('__')
+        )]
+
+    return results
+
+
+def _transform_results(results, groupby_fields, config, model):
+    """Transform read_group results into the expected format."""
+    transformed_data = []
+
+    for result in results:
+        data = {
+            'key': result[groupby_fields[0]][1] if isinstance(result[groupby_fields[0]], (tuple, list)) else result[groupby_fields[0]],
+            '__domain': result['__domain']
+        }
+
+        if len(groupby_fields) > 1:
+            measure_fields = [f"{measure['field']}:{measure.get('aggregation', 'sum')}"
+                              for measure in config['graph_options']['measures']]
+
+            sub_results = model.read_group(
+                result['__domain'],
+                fields=measure_fields,
+                groupby=groupby_fields[1],
+                orderby=groupby_fields[1],
+                lazy=True
+            )
+
+            show_empty_2 = config.get('group_by_list', [{}])[1].get('show_empty', False) if len(config.get('group_by_list', [])) > 1 else False
+
+            if show_empty_2:
+                if ':' in groupby_fields[1]:
+                    sub_results = complete_missing_date_intervals(sub_results)
+                else:
+                    sub_results = complete_missing_selection_values(sub_results, model, groupby_fields[1])
+
+            for sub_result in sub_results:
+                for measure in config['graph_options']['measures']:
+                    data_sub_key = sub_result[groupby_fields[1]][1] if isinstance(sub_result[groupby_fields[1]], (tuple, list)) else sub_result[groupby_fields[1]]
+                    data[f"{measure['field']}|{data_sub_key}"] = {
+                        "value": sub_result[measure['field']],
+                        "__domain": sub_result["__domain"]
+                    }
+        else:
+            for measure in config['graph_options']['measures']:
+                data[measure['field']] = result[measure['field']]
+
+        transformed_data.append(data)
+
+    return transformed_data
+
+
+def _process_graph(model, domain, group_by_list, order_string, config, env=None):
+    """
+    Process graph type visualization with optimized relational field handling.
+    """
+    try:
+        if env:
+            domain = _apply_company_filtering(domain, model, env)
+
+        total_count = model.search_count(domain)
+
+        if not group_by_list:
+            group_by_list = [{'field': 'name'}]
+            order_string = "name asc"
+
+        graph_options = config.get('graph_options', {})
+        measures = graph_options.get('measures', [])
+        if not measures:
+            measures = [{'field': 'id', 'aggregation': 'count'}]
+
+        groupby_fields = _prepare_groupby_fields(group_by_list)
+        measure_fields, relational_measures = _prepare_measures(measures, model)
+
+        if not measure_fields and not relational_measures:
+            measure_fields = ['id:count']
+
+        results = model.read_group(
+            domain,
+            fields=measure_fields,
+            groupby=groupby_fields,
+            orderby=order_string,
+            lazy=True
+        )
+
+        results = _compute_relational_aggregates(results, relational_measures, model)
+        results = _apply_show_empty(results, group_by_list, groupby_fields, model)
+
+        config_with_groupby = {**config, 'group_by_list': group_by_list}
+        transformed_data = _transform_results(results, groupby_fields, config_with_groupby, model)
+
+        return {
+            'data': transformed_data,
+            'metadata': {
+                'total_count': total_count
+            }
+        }
+
+    except Exception as e:
+        _logger.exception("Error in _process_graph: %s", e)
+        return {'error': f'Error processing graph data: {str(e)}'}
+
+
+# =============================================================================
+# Utility Functions for Missing Values
+# =============================================================================
+
+def complete_missing_selection_values(results, model, field_name):
+    """Fills in missing values in the results for fields of type selection or many2one."""
+    if not results:
+        return results
+
+    field_info = model._fields.get(field_name)
+    if not field_info:
+        return results
+
+    field_type = field_info.type
+    if field_type not in ['selection', 'many2one']:
+        return results
+
+    all_possible_values = []
+
+    if field_type == 'selection':
+        if callable(field_info.selection):
+            selection_options = field_info.selection(model)
+        else:
+            selection_options = field_info.selection
+        all_possible_values = [value for value, _ in selection_options]
+
+    elif field_type == 'many2one':
+        related_model = model.env[field_info.comodel_name].sudo()
+        all_possible_values = related_model.search([]).ids
+
+    present_values = set()
+    groupby_field = field_name
+
+    for result in results:
+        for key in result.keys():
+            if key.split(':')[0] == field_name:
+                groupby_field = key
+                break
+
+    for result in results:
+        if groupby_field in result and result[groupby_field] is not None:
+            value = result[groupby_field]
+            if isinstance(value, (list, tuple)) and len(value) >= 2:
+                present_values.add(value[0])
+            else:
+                present_values.add(value)
+
+    missing_values = [v for v in all_possible_values if v not in present_values]
+
+    complete_results = list(results)
+
+    template = results[0] if results else None
+
+    if template and missing_values:
+        for missing_value in missing_values:
+            new_entry = {k: 0 if isinstance(v, (int, float)) else (None if v is None else v)
+                         for k, v in template.items() if k != groupby_field}
+
+            domain = [(field_name, '=', missing_value)]
+            new_entry[groupby_field] = missing_value
+
+            if field_type == 'many2one' and missing_value:
+                related_model = model.env[field_info.comodel_name].sudo()
+                record = related_model.browse(missing_value)
+                if record.exists():
+                    new_entry[groupby_field] = [missing_value, record.display_name]
+
+            if '__domain' in template:
+                new_entry['__domain'] = domain
+
+            if '__context' in template:
+                new_entry['__context'] = template['__context']
+
+            complete_results.append(new_entry)
+
+    return complete_results
+
+
+def complete_missing_date_intervals(results):
+    """Fills in the missing intervals in the read_group results."""
+    if not results or len(results) < 2:
+        return results
+
+    complete_results = [results[0]]
+
+    interval_type = None
+    range_field = None
+
+    for key in results[0]['__range']:
+        if key.endswith(':day'):
+            interval_type = 'day'
+            range_field = key
+            break
+        elif key.endswith(':week'):
+            interval_type = 'week'
+            range_field = key
+            break
+        elif key.endswith(':month'):
+            interval_type = 'month'
+            range_field = key
+            break
+        elif key.endswith(':quarter'):
+            interval_type = 'quarter'
+            range_field = key
+            break
+        elif key.endswith(':year'):
+            interval_type = 'year'
+            range_field = key
+            break
+
+    if not interval_type:
+        return results
+
+    for i in range(1, len(results)):
+        prev_result = complete_results[-1]
+        curr_result = results[i]
+
+        try:
+            prev_to = datetime.strptime(prev_result['__range'][range_field]['to'], '%Y-%m-%d %H:%M:%S')
+            curr_from = datetime.strptime(curr_result['__range'][range_field]['from'], '%Y-%m-%d %H:%M:%S')
+        except Exception:
+            prev_to = datetime.strptime(prev_result['__range'][range_field]['to'], '%Y-%m-%d')
+            curr_from = datetime.strptime(curr_result['__range'][range_field]['from'], '%Y-%m-%d')
+
+        if prev_to < curr_from:
+            next_date = prev_to
+
+            while next_date < curr_from:
+                if interval_type == 'day':
+                    interval_end = next_date + timedelta(days=1)
+                    label = next_date.strftime("%d %b %Y")
+                elif interval_type == 'week':
+                    interval_end = next_date + timedelta(weeks=1)
+                    label = f"W{interval_end.isocalendar()[1]} {interval_end.year}"
+                elif interval_type == 'month':
+                    interval_end = next_date + relativedelta(months=1)
+                    label = next_date.strftime('%B %Y')
+                elif interval_type == 'quarter':
+                    interval_end = next_date + relativedelta(months=3)
+                    quarter = (next_date.month - 1) // 3 + 1
+                    label = f"Q{quarter} {next_date.year}"
+                elif interval_type == 'year':
+                    interval_end = next_date + relativedelta(years=1)
+                    label = str(next_date.year)
+
+                base_field = range_field.split(':')[0]
+                domain = [
+                    '&',
+                    (base_field, '>=', next_date.strftime('%Y-%m-%d %H:%M:%S')),
+                    (base_field, '<', interval_end.strftime('%Y-%m-%d %H:%M:%S'))
+                ]
+
+                missing_result = {
+                    range_field: label,
+                    '__range': {
+                        range_field: {
+                            'from': next_date.strftime('%Y-%m-%d %H:%M:%S'),
+                            'to': interval_end.strftime('%Y-%m-%d %H:%M:%S')
+                        }
+                    },
+                    '__domain': domain,
+                    '__context': curr_result.get('__context', {})
+                }
+
+                for key, value in curr_result.items():
+                    if key not in [range_field, '__range', '__domain', '__context']:
+                        if isinstance(value, (int, float)):
+                            missing_result[key] = 0
+                        elif value is None:
+                            missing_result[key] = None
+                        else:
+                            missing_result[key] = value
+
+                complete_results.append(missing_result)
+                next_date = interval_end
+
+        complete_results.append(curr_result)
+
+    return complete_results
+
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
+
+def process_dashboard_request(request_data, env):
+    """
+    Process dashboard visualization requests.
+    This function handles validation, parsing, and routing to appropriate processor functions.
+
+    Args:
+        request_data: JSON data from the request, can be a single configuration or a list
+        env: Odoo environment from the request
+
+    Returns:
+        Dictionary with results for each requested visualization
+    """
+    results = {}
+
+    # Ensure request_data is a list
+    if not isinstance(request_data, list):
+        request_data = [request_data]
+
+    # Process each visualization request
+    for config in request_data:
+        config_id = config.get('id')
+        if not config_id:
+            continue
+
+        try:
+            # Extract configuration parameters
+            viz_type = config.get('type')
+            model_name = config.get('model')
+            data_source = config.get('data_source', {})
+
+            # Validate essential parameters
+            if not all([viz_type, model_name]):
+                results[config_id] = {'error': 'Missing required parameters: type, model'}
+                continue
+
+            # Check if model exists
+            try:
+                model = env[model_name].sudo()
+            except KeyError:
+                results[config_id] = {'error': f'Model not found: {model_name}'}
+                continue
+
+            # Extract common parameters
+            domain = data_source.get('domain', [])
+            group_by = data_source.get('groupBy', [])
+
+            # Enrich groupBy with field labels for frontend display
+            group_by = _enrich_group_by_with_labels(group_by, model)
+
+            order_by = data_source.get('orderBy', {})
+            order_string = None
+            if order_by:
+                field = order_by.get('field')
+                direction = order_by.get('direction', 'asc')
+                if field:
+                    order_string = f"{field} {direction}"
+
+            # Check if SQL request is provided
+            sql_request = data_source.get('sqlRequest')
+
+            # Process based on visualization type
+            if sql_request and viz_type in ['graph', 'table']:
+                pass
+                # Handle SQL request (with security measures)
+                # result = _process_sql_request(sql_request, viz_type, config, env)
+            elif viz_type == 'block':
+                result = _process_block(model, domain, config, env)
+            elif viz_type == 'graph':
+                result = _process_graph(model, domain, group_by, order_string, config, env)
+            elif viz_type == 'table':
+                result = _process_table(model, domain, group_by, order_string, config, env)
+            else:
+                result = {'error': f'Unsupported visualization type: {viz_type}'}
+
+            # Add enriched groupBy to result for frontend access
+            if group_by and viz_type in ['graph', 'table']:
+                result['enriched_group_by'] = group_by
+
+            if data_source.get('preview') and viz_type != 'block':
+                result['data'] = result['data'][:50]
+
+            results[config_id] = result
+
+        except Exception as e:
+            _logger.exception("Error processing visualization %s:", config_id)
+            results[config_id] = {'error': str(e)}
+
+    return results
+
+
+def get_action_config(action_name):
+    """
+    Define action configurations for the unified API system.
+    This allows the engine to define its own action mappings without requiring
+    updates to the customer-installed odashboard module.
+
+    Args:
+        action_name (str): The action to get configuration for
+
+    Returns:
+        dict: Configuration with success/error format
+    """
+    try:
+        action_configs = {
+            'get_user_context': {
+                'method': 'get_user_context',
+                'args': ['env'],
+                'required_params': [],
+                'description': 'Get current user context (language, timezone, date formats) for cache invalidation'
+            },
+            'get_models': {
+                'method': 'get_models',
+                'args': ['env'],
+                'required_params': [],
+                'description': 'Get list of models relevant for analytics'
+            },
+            'get_model_fields': {
+                'method': 'get_model_fields',
+                'args': [{'param': 'model_name'}, 'env'],
+                'required_params': ['model_name'],
+                'description': 'Get fields information for a specific model'
+            },
+            'get_model_records': {
+                'method': 'get_model_records',
+                'args': [{'param': 'model_name'}, 'parameters', 'env'],
+                'required_params': ['model_name'],
+                'description': 'Get records of a specific model with pagination'
+            },
+            'get_model_search': {
+                'method': 'get_model_search',
+                'args': [{'param': 'model_name'}, 'parameters', 'request'],
+                'required_params': ['model_name'],
+                'description': 'Search records of a specific model'
+            },
+            'process_dashboard_request': {
+                'method': 'process_dashboard_request',
+                'args': [{'param': 'request_data', 'default': 'parameters'}, 'env'],
+                'required_params': ['request_data'],
+                'description': 'Process dashboard visualization requests'
+            }
+        }
+
+        if action_name in action_configs:
+            return {'success': True, 'data': action_configs[action_name]}
+        else:
+            return {
+                'success': False,
+                'error': f'Unknown action: {action_name}. Available actions: {", ".join(action_configs.keys())}'
+            }
+
+    except Exception as e:
+        _logger.error("Error in get_action_config: %s", str(e))
+        return {'success': False, 'error': str(e)}
