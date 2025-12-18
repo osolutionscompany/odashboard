@@ -23,6 +23,10 @@ class ResConfigSettings(models.TransientModel):
                                                  config_parameter="odashboard.key_synchronized", readonly=True)
     odashboard_uuid = fields.Char(string="Odashboard UUID", config_parameter="odashboard.uuid", readonly=True)
     odashboard_engine_version = fields.Char(string="Current Engine Version", readonly=True)
+    odashboard_is_free_trial = fields.Boolean(string="Is Free Trial",
+                                              config_parameter="odashboard.is_free_trial", readonly=True)
+    odashboard_free_trial_end_date = fields.Char(string="Free Trial End Date",
+                                                  config_parameter="odashboard.free_trial_end_date", readonly=True)
 
     def set_values(self):
         super(ResConfigSettings, self).set_values()
@@ -111,7 +115,22 @@ class ResConfigSettings(models.TransientModel):
                 result = response.json().get('result')
 
                 if result.get('valid'):
-                    self.env['ir.config_parameter'].sudo().set_param('odashboard.key_synchronized', True)
+                    config_params = self.env['ir.config_parameter'].sudo()
+                    config_params.set_param('odashboard.key_synchronized', True)
+
+                    # Store free trial information if provided
+                    if result.get('is_free_plan'):
+                        config_params.set_param('odashboard.is_free_trial', True)
+                        if result.get('free_end_date'):
+                            config_params.set_param('odashboard.free_trial_end_date', result.get('free_end_date'))
+                    else:
+                        config_params.set_param('odashboard.is_free_trial', False)
+                        config_params.set_param('odashboard.free_trial_end_date', False)
+
+                    # Store plan information if provided
+                    if result.get('odash_sub_plan'):
+                        config_params.set_param('odashboard.plan', result.get('odash_sub_plan'))
+
                     self.env["odash.dashboard"].sudo().update_auth_token()
 
                     return {
@@ -209,6 +228,8 @@ class ResConfigSettings(models.TransientModel):
         config_params.set_param('odashboard.key', '')
         config_params.set_param('odashboard.plan', '')
         config_params.set_param('odashboard.api.token', '')
+        config_params.set_param('odashboard.is_free_trial', False)
+        config_params.set_param('odashboard.free_trial_end_date', False)
 
         # Update the current record
         self.write({
