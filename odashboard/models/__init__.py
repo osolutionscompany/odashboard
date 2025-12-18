@@ -4,6 +4,7 @@ from . import odash_category
 from . import odash_dashboard
 from . import ir_http
 from . import odash_engine
+from . import engine_logic
 from . import odash_security_group
 from . import odash_pdf_report
 from . import odash_pdf_generator
