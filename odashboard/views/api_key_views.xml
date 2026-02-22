@@ -130,7 +130,7 @@
               name="ODashboard"
               sequence="100"
               action="action_odashboard_iframe"
-              web_icon="odashboard_client,static/description/icon.png"/>
+              web_icon="odashboard,static/description/icon.png"/>
 
     <menuitem id="menu_odashboard_config"
               name="Configuration"

@@ -38,7 +38,7 @@ const IFRAME_POST_LOAD_TIMEOUT = 2000;
 const IFRAME_MAX_TIMEOUT = 15000;
 
 class ODashboardAction extends Component {
-    static template = "odashboard_client.ODashboardAction";
+    static template = "odashboard.ODashboardAction";
     static props = ["*"];
 
     setup() {
