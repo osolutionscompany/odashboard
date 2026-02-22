@@ -1,254 +1,192 @@
 import requests
-import uuid
-import logging
-from werkzeug.urls import url_encode
 
-from odoo import models, fields, api, _
-from ..hooks import post_init_hook
-
-_logger = logging.getLogger(__name__)
-
-# Constants
-DEFAULT_API_ENDPOINT = 'https://odashboard.app'
-API_TIMEOUT = 10
-REQUEST_TIMEOUT = 30
+from odoo import api, fields, models
+from odoo.exceptions import UserError
 
 
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
-    odashboard_plan = fields.Char(string='Odashboard Plan', config_parameter="odashboard.plan")
-    odashboard_key = fields.Char(string="Odashboard Key", config_parameter="odashboard.key")
-    odashboard_key_synchronized = fields.Boolean(string="Key Synchronized",
-                                                 config_parameter="odashboard.key_synchronized", readonly=True)
-    odashboard_uuid = fields.Char(string="Odashboard UUID", config_parameter="odashboard.uuid", readonly=True)
-    odashboard_engine_version = fields.Char(string="Current Engine Version", readonly=True)
-    odashboard_is_free_trial = fields.Boolean(string="Is Free Trial",
-                                              config_parameter="odashboard.is_free_trial", readonly=True)
-    odashboard_free_trial_end_date = fields.Char(string="Free Trial End Date",
-                                                  config_parameter="odashboard.free_trial_end_date", readonly=True)
+    # ODashboard configuration
+    odashboard_api_url = fields.Char(
+        string='URL de l\'API ODashboard',
+        config_parameter='odashboard.api_url',
+        help='L\'URL du serveur API ODashboard (ex : https://api.odashboard.io)',
+    )
+    odashboard_frontend_url = fields.Char(
+        string='URL de l\'application ODashboard',
+        config_parameter='odashboard.frontend_url',
+        help='L\'URL de l\'application web ODashboard (ex : https://app.odashboard.io)',
+    )
+    odashboard_instance_key = fields.Char(
+        string='Clé d\'instance',
+        config_parameter='odashboard.instance_key',
+        help='La clé d\'instance ODashboard. Copiez-la depuis les paramètres de votre instance.',
+    )
+    odashboard_sync_status = fields.Selection(
+        selection=[
+            ('not_configured', 'Non configuré'),
+            ('pending', 'En attente'),
+            ('connected', 'Connecté'),
+        ],
+        string='État de la connexion',
+        compute='_compute_odashboard_sync_status',
+        help='État actuel de la connexion avec ODashboard',
+    )
+
+    @api.depends('odashboard_api_url', 'odashboard_instance_key')
+    def _compute_odashboard_sync_status(self):
+        """Compute the sync status from real stored state.
+
+        The flag ``odashboard.connected`` is persisted in ``ir.config_parameter``
+        and is set to ``'true'`` **only** after a successful sync.  It is reset
+        whenever the instance key changes.
+
+        Status logic:
+        - not_configured: Missing API URL or instance key
+        - pending: Configured but not yet connected (sync needed)
+        - connected: Sync succeeded (odashboard.connected == 'true')
+        """
+        ICP = self.env['ir.config_parameter'].sudo()
+        is_connected = ICP.get_param('odashboard.connected', default='') == 'true'
+
+        for record in self:
+            if not record.odashboard_api_url or not record.odashboard_instance_key:
+                record.odashboard_sync_status = 'not_configured'
+            elif is_connected:
+                record.odashboard_sync_status = 'connected'
+            else:
+                record.odashboard_sync_status = 'pending'
 
     def set_values(self):
-        super(ResConfigSettings, self).set_values()
+        """Override to detect instance_key changes and invalidate the connection."""
+        ICP = self.env['ir.config_parameter'].sudo()
+        old_key = ICP.get_param('odashboard.instance_key', default='')
+        new_key = self.odashboard_instance_key or ''
 
-    @api.model
-    def get_values(self):
-        res = super(ResConfigSettings, self).get_values()
+        res = super().set_values()
 
-        uuid_param = self.env['ir.config_parameter'].sudo().get_param('odashboard.uuid')
-        if not uuid_param:
-            uuid_param = str(uuid.uuid4())
-            self.env['ir.config_parameter'].sudo().set_param('odashboard.uuid', uuid_param)
+        # If instance_key changed (new value or cleared), the old default API key
+        # is no longer valid — delete it and reset the connected flag.
+        if new_key != old_key:
+            ICP.set_param('odashboard.connected', '')
+            ICP.set_param('odashboard.instance_identifier', '')
 
-        engine = self.env['odash.engine'].sudo()._get_single_record()
-
-        res.update({
-            'odashboard_uuid': uuid_param,
-            'odashboard_engine_version': engine.version,
-        })
+            ApiKey = self.env['odashboard.api.key'].sudo()
+            default_keys = ApiKey.search([('key_type', '=', 'default')])
+            if default_keys:
+                default_keys.unlink()
 
         return res
 
-    def action_check_engine_updates(self):
-        """Check update for Odashboard engine"""
-        engine = self.env['odash.engine'].sudo()._get_single_record()
-        result = engine.check_for_updates()
+    def action_odashboard_sync(self):
+        """Trigger synchronization with ODashboard."""
+        self.ensure_one()
 
-        if result:
+        ICP = self.env['ir.config_parameter'].sudo()
+        api_url = ICP.get_param('odashboard.api_url', default='')
+        instance_key = ICP.get_param('odashboard.instance_key', default='')
+
+        if not api_url:
+            raise UserError('Veuillez d\'abord configurer l\'URL de l\'API ODashboard.')
+        if not instance_key:
+            raise UserError('Veuillez d\'abord configurer la clé d\'instance.')
+
+        # Normalize URLs
+        api_url = api_url.rstrip('/')
+        odoo_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+
+        if not odoo_url:
+            raise UserError('Impossible de déterminer l\'URL de base Odoo.')
+
+        try:
+            # Call ODashboard sync endpoint
+            response = requests.post(
+                f'{api_url}/instances/sync',
+                json={'odoo_url': odoo_url},
+                headers={
+                    'X-Instance-Key': instance_key,
+                    'Content-Type': 'application/json',
+                },
+                timeout=60,
+            )
+
+            if response.status_code == 401:
+                raise UserError('Clé d\'instance invalide. Vérifiez votre configuration.')
+            elif response.status_code == 502:
+                # ODashboard tried to call us but failed — likely a network issue
+                data = response.json()
+                raise UserError(f'ODashboard n\'a pas pu se reconnecter à Odoo : {data.get("detail", "Erreur inconnue")}')
+            elif response.status_code != 200:
+                data = response.json() if response.headers.get('content-type', '').startswith('application/json') else {}
+                raise UserError(f'Échec de la synchronisation : {data.get("detail", response.text)}')
+
+            # Store instance_identifier (public UUID) returned by the API.
+            # This is used in iframe tokens to identify the instance without
+            # exposing the secret instance_key.
+            sync_data = response.json()
+            instance_identifier = sync_data.get('instance_identifier', '')
+            if instance_identifier:
+                ICP.set_param('odashboard.instance_identifier', instance_identifier)
+
+            # Mark as connected — this is the ONLY place this flag gets set.
+            ICP.set_param('odashboard.connected', 'true')
+
+            # Success — reload the settings form to update the badge
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
-                    'title': _('Successful update'),
-                    'message': _('The Odashboard Engine has been updated to version %s') % engine.version,
+                    'title': 'Synchronisation réussie',
+                    'message': 'La connexion avec ODashboard a été établie. Les utilisateurs et le schéma ont été synchronisés.',
                     'type': 'success',
                     'sticky': False,
-                }
-            }
-        else:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Information'),
-                    'message': _('No update available. You are already using the latest version (%s)') % engine.version,
-                    'type': 'info',
-                    'sticky': False,
-                }
-            }
-
-    def synchronize_key(self):
-        """Synchronize the key with the license server"""
-
-        # Automatically save the configuration settings first
-        self.set_values()
-
-        if not self.odashboard_key:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Error'),
-                    'message': _('Please enter a key before synchronizing'),
-                    'type': 'danger',
-                    'sticky': False,
-                }
-            }
-
-        # Get the license API endpoint from config parameters
-        api_endpoint = self.env['ir.config_parameter'].sudo().get_param('odashboard.api.endpoint',
-                                                                        DEFAULT_API_ENDPOINT)
-
-        # Verify key with external platform
-        try:
-            response = requests.post(
-                f"{api_endpoint}/api/odashboard/license/verify",
-                json={
-                    'key': self.odashboard_key,
-                    'uuid': self.odashboard_uuid,
-                    'url': self.env['ir.config_parameter'].sudo().get_param('web.base.url')
-                },
-                timeout=REQUEST_TIMEOUT
-            )
-
-            if response.status_code == 200:
-                result = response.json().get('result')
-
-                if result.get('valid'):
-                    config_params = self.env['ir.config_parameter'].sudo()
-                    config_params.set_param('odashboard.key_synchronized', True)
-
-                    # Store free trial information if provided
-                    if result.get('is_free_plan'):
-                        config_params.set_param('odashboard.is_free_trial', True)
-                        if result.get('free_end_date'):
-                            config_params.set_param('odashboard.free_trial_end_date', result.get('free_end_date'))
-                    else:
-                        config_params.set_param('odashboard.is_free_trial', False)
-                        config_params.set_param('odashboard.free_trial_end_date', False)
-
-                    # Store plan information if provided
-                    if result.get('odash_sub_plan'):
-                        config_params.set_param('odashboard.plan', result.get('odash_sub_plan'))
-
-                    self.env["odash.dashboard"].sudo().update_auth_token()
-
-                    return {
+                    'next': {
                         'type': 'ir.actions.client',
                         'tag': 'reload',
-                    }
-                else:
-                    return {
-                        'type': 'ir.actions.client',
-                        'tag': 'display_notification',
-                        'params': {
-                            'title': _('Error'),
-                            'message': result.get('error', _('Invalid key')),
-                            'type': 'danger',
-                            'sticky': False,
-                        }
-                    }
-            else:
-                return {
-                    'type': 'ir.actions.client',
-                    'tag': 'display_notification',
-                    'params': {
-                        'title': _('Error'),
-                        'message': _('Error verifying key'),
-                        'type': 'danger',
-                        'sticky': False,
-                    }
+                    },
                 }
+            }
+
+        except requests.exceptions.Timeout:
+            raise UserError('La connexion à ODashboard a expiré. Veuillez réessayer.')
+        except requests.exceptions.ConnectionError:
+            raise UserError(f'Impossible de se connecter à ODashboard ({api_url}). Vérifiez l\'URL.')
         except requests.exceptions.RequestException as e:
-            _logger.error("Connection error when verifying license key: %s", str(e))
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Error'),
-                    'message': _('Connection error when verifying license key'),
-                    'type': 'danger',
-                    'sticky': False,
-                }
-            }
+            raise UserError(f'Erreur de connexion : {str(e)}')
 
-    def desynchronize_key(self):
-        """De-synchronize the key from the license server"""
-        # Check if key is synchronized
-        config_model = self.env['ir.config_parameter'].sudo()
-        is_synchronized = bool(config_model.get_param('odashboard.key_synchronized', 'False'))
-        if not is_synchronized:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Warning'),
-                    'message': _('key is not synchronized'),
-                    'type': 'warning',
-                    'sticky': False,
-                }
-            }
+    def action_odashboard_disconnect(self):
+        """Disconnect from ODashboard by clearing the instance key and deleting default API keys."""
+        self.ensure_one()
 
-        key = config_model.get_param('odashboard.key')
-        uuid_param = config_model.get_param('odashboard.uuid')
+        ICP = self.env['ir.config_parameter'].sudo()
 
-        # Get the license API endpoint from config parameters
-        api_endpoint = config_model.get_param('odashboard.api.endpoint', DEFAULT_API_ENDPOINT)
+        # Clear the instance key — this invalidates the connection
+        ICP.set_param('odashboard.instance_key', '')
 
-        # Notify the license server about desynchronization
-        try:
-            requests.post(
-                f"{api_endpoint}/api/odashboard/license/unlink",
-                json={
-                    'key': key,
-                    'uuid': uuid_param
-                },
-                timeout=API_TIMEOUT
-            )
-            self._clear_odashboard_data()
-        except Exception as e:
-            _logger.error("Error during key desynchronization: %s", str(e))
-            self._clear_odashboard_data()
+        # Clear instance identifier (received during sync)
+        ICP.set_param('odashboard.instance_identifier', '')
+
+        # Reset connection flag
+        ICP.set_param('odashboard.connected', '')
+
+        # Delete all default API keys (the key ODashboard uses to call us)
+        ApiKey = self.env['odashboard.api.key'].sudo()
+        default_keys = ApiKey.search([('key_type', '=', 'default')])
+        if default_keys:
+            default_keys.unlink()
 
         return {
             'type': 'ir.actions.client',
-            'tag': 'reload',
-        }
-
-    def get_my_key(self):
-        """
-        Call the post_init_hook to create and sync a demo key
-        """
-        post_init_hook(self.env)
-
-    def _clear_odashboard_data(self):
-        """Clear all odashboard-related configuration data"""
-        config_params = self.env['ir.config_parameter'].sudo()
-        config_params.set_param('odashboard.key_synchronized', False)
-        config_params.set_param('odashboard.key', '')
-        config_params.set_param('odashboard.plan', '')
-        config_params.set_param('odashboard.api.token', '')
-        config_params.set_param('odashboard.is_free_trial', False)
-        config_params.set_param('odashboard.free_trial_end_date', False)
-
-        # Update the current record
-        self.write({
-            'odashboard_key': '',
-            'odashboard_key_synchronized': False,
-        })
-
-    def action_manage_plan(self):
-        """Open the O'Dashboard billing/plan management page in a new tab."""
-        config = self.env['ir.config_parameter'].sudo()
-        base = config.get_param('odashboard.api.endpoint', DEFAULT_API_ENDPOINT)
-        key = config.get_param('odashboard.key')
-
-        # Use a stable path on the portal for plan management
-        url = f"{base.rstrip('/')}/odash/manage-plan?key={key}"
-
-        # Redirect to the URL (open in a new tab)
-        return {
-            'type': 'ir.actions.act_url',
-            'url': url,
-            'target': 'new',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'ODashboard déconnecté',
+                'message': 'La clé d\'instance et la clé API par défaut ont été supprimées.',
+                'type': 'warning',
+                'sticky': False,
+                'next': {
+                    'type': 'ir.actions.client',
+                    'tag': 'reload',
+                },
+            }
         }
