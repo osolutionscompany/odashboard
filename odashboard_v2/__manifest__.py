@@ -25,9 +25,9 @@
     ],
     'assets': {
         'web.assets_backend': [
-            'odashboard/static/src/css/odashboard_action.css',
-            'odashboard/static/src/js/odashboard_action.js',
-            'odashboard/static/src/xml/odashboard_action.xml',
+            'odashboard_v2static/src/css/odashboard_action.css',
+            'odashboard_v2static/src/js/odashboard_action.js',
+            'odashboard_v2static/src/xml/odashboard_action.xml',
         ],
     },
     'license': 'LGPL-3',
