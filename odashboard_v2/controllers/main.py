@@ -862,7 +862,7 @@ class OdashboardController(http.Controller):
     # API KEY ROTATION (called by ODashboard during sync)
     # =========================================================================
 
-    @http.route('/odashboard/rotate-api-key', type='json', auth='none', methods=['POST'], csrf=False)
+    @http.route('/odashboard/rotate-api-key', type='jsonrpc', auth='none', methods=['POST'], csrf=False)
     def rotate_api_key(self, instance_key=None, current_api_key=None, **kwargs):
         """
         Rotate the default API key for ODashboard synchronization.
@@ -919,7 +919,7 @@ class OdashboardController(http.Controller):
     # IFRAME TOKEN GENERATION (for embedding dashboards)
     # =========================================================================
 
-    @http.route('/odashboard/iframe-token', type='json', auth='user', methods=['POST'], csrf=False)
+    @http.route('/odashboard/iframe-token', type='jsonrpc', auth='user', methods=['POST'], csrf=False)
     def generate_iframe_token(self, **kwargs):
         """
         Generate a signed HMAC token for iframe authentication.
