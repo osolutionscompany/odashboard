@@ -7,7 +7,7 @@
         <field name="inherit_id" ref="base.res_config_settings_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
-                <app data-string="ODashboard" string="ODashboard" name="odashboard" logo="/odashboard/static/description/icon.png">
+                <app data-string="ODashboard" string="ODashboard" name="odashboard" logo="/odashboard_v2/static/description/icon.png">
                     <block title="Connexion ODashboard" name="odashboard_connection">
                         <setting string="URL de l'API" help="L'URL du serveur API ODashboard">
                             <field name="odashboard_api_url" placeholder="https://api.odashboard.io"/>
