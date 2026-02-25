@@ -41,7 +41,11 @@ class ODashboardAction extends Component {
 
     setup() {
         this.action = useService("action");
-        this.companyService = useService("company");
+        try {
+            this.companyService = useService("company");
+        } catch {
+            this.companyService = null;
+        }
         this.iframeRef = useRef("iframe");
         this._iframeLoadTimer = null;
         this._iframeAlive = false;
