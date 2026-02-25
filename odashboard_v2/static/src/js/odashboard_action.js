@@ -1,7 +1,7 @@
 import { Component, useState, onWillStart, onMounted, onWillUnmount, useRef } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
-import { rpc } from "@web/core/network/rpc";
+import { jsonrpc } from "@web/core/network/rpc_service";
 import { cookie } from "@web/core/browser/cookie";
 
 /**
@@ -41,7 +41,11 @@ class ODashboardAction extends Component {
 
     setup() {
         this.action = useService("action");
-        this.companyService = useService("company");
+        try {
+            this.companyService = useService("company");
+        } catch {
+            this.companyService = null;
+        }
         this.iframeRef = useRef("iframe");
         this._iframeLoadTimer = null;
         this._iframeAlive = false;
@@ -77,7 +81,7 @@ class ODashboardAction extends Component {
 
     async loadIframeToken() {
         try {
-            const result = await rpc("/odashboard/iframe-token", {});
+            const result = await jsonrpc("/odashboard/iframe-token", {});
 
             if (result.error) {
                 if (result.error === "not_configured") {
@@ -256,7 +260,7 @@ class ODashboardAction extends Component {
             }
             const targetOrigin = this._frontendOrigin;
             try {
-                const result = await rpc("/odashboard/iframe-token", {});
+                const result = await jsonrpc("/odashboard/iframe-token", {});
 
                 if (result.error || !result.token) {
                     iframe.contentWindow.postMessage({
