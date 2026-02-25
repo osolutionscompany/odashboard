@@ -5,38 +5,38 @@ from odoo.exceptions import ValidationError
 
 class OdashboardApiKey(models.Model):
     _name = 'odashboard.api.key'
-    _description = 'Clé API ODashboard'
+    _description = 'ODashboard API Key'
 
     _sql_constraints = [
-        ('key_unique', 'unique(key)', 'La clé API doit être unique !'),
+        ('key_unique', 'unique(key)', 'The API key must be unique!'),
     ]
 
-    name = fields.Char(string='Nom', required=True)
-    key = fields.Char(string='Clé API', copy=False)
-    active = fields.Boolean(string='Actif', default=True)
-    user_id = fields.Many2one('res.users', string='Utilisateur', default=lambda self: self.env.user, ondelete='set null')
+    name = fields.Char(string='Name', required=True)
+    key = fields.Char(string='API Key', copy=False)
+    active = fields.Boolean(string='Active', default=True)
+    user_id = fields.Many2one('res.users', string='User', default=lambda self: self.env.user, ondelete='set null')
 
     # Key type: default (managed by ODashboard) or custom (managed by admin)
     key_type = fields.Selection([
-        ('default', 'Par défaut (géré par ODashboard)'),
-        ('custom', 'Personnalisé'),
+        ('default', 'Default (managed by ODashboard)'),
+        ('custom', 'Custom'),
     ], string='Type', default='custom', required=True)
 
     # Access control (only for custom keys)
     allowed_models = fields.Char(
-        string='Modèles autorisés',
-        help='Liste de noms de modèles séparés par des virgules. Laisser vide pour autoriser tous les modèles.'
+        string='Allowed Models',
+        help='Comma-separated list of model names. Leave empty to allow all models.'
     )
 
     # Audit
-    last_used = fields.Datetime(string='Dernière utilisation', readonly=True)
-    usage_count = fields.Integer(string='Nombre d\'utilisations', default=0, readonly=True)
+    last_used = fields.Datetime(string='Last Used', readonly=True)
+    usage_count = fields.Integer(string='Usage Count', default=0, readonly=True)
 
     # Computed field to hide key value for default type
     key_display = fields.Char(
-        string='Clé API',
+        string='API Key',
         compute='_compute_key_display',
-        help='La valeur de la clé API. Masquée pour les clés par défaut.'
+        help='The API key value. Hidden for default keys.'
     )
 
     @api.constrains('key_type', 'active')
@@ -50,7 +50,7 @@ class OdashboardApiKey(models.Model):
                     ('id', '!=', record.id),
                 ])
                 if existing:
-                    raise ValidationError('Une seule clé API par défaut active est autorisée.')
+                    raise ValidationError('Only one active default API key is allowed.')
 
     def init(self):
         """Create partial unique index to enforce single active default key at DB level."""
@@ -83,7 +83,7 @@ class OdashboardApiKey(models.Model):
             allowed_fields = {'last_used', 'usage_count', 'active'}
             if not set(vals.keys()).issubset(allowed_fields):
                 raise ValidationError(
-                    'Les clés API par défaut sont gérées par ODashboard et ne peuvent pas être modifiées.'
+                    'Default API keys are managed by ODashboard and cannot be modified.'
                 )
         return super().write(vals)
 
@@ -91,7 +91,7 @@ class OdashboardApiKey(models.Model):
         """Prevent deletion of default keys (except by sudo)."""
         if not self.env.su and any(rec.key_type == 'default' for rec in self):
             raise ValidationError(
-                'Les clés API par défaut sont gérées par ODashboard et ne peuvent pas être supprimées.'
+                'Default API keys are managed by ODashboard and cannot be deleted.'
             )
         return super().unlink()
 
@@ -104,15 +104,15 @@ class OdashboardApiKey(models.Model):
         self.ensure_one()
         if self.key_type == 'default':
             raise ValidationError(
-                'Les clés API par défaut sont gérées par ODashboard et ne peuvent pas être régénérées manuellement.'
+                'Default API keys are managed by ODashboard and cannot be regenerated manually.'
             )
         self.key = self._generate_api_key()
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
-                'title': 'Clé API régénérée',
-                'message': 'La clé API a été régénérée. Veuillez mettre à jour votre configuration.',
+                'title': 'API Key Regenerated',
+                'message': 'The API key has been regenerated. Please update your configuration.',
                 'type': 'warning',
                 'sticky': False,
             }
@@ -120,14 +120,14 @@ class OdashboardApiKey(models.Model):
 
     def _update_usage(self):
         """Update last_used timestamp and increment usage count atomically.
-        
+
         Uses raw SQL to ensure atomic increment of usage_count,
         preventing race conditions under concurrent requests.
         """
         self.env.cr.execute("""
-            UPDATE odashboard_api_key 
+            UPDATE odashboard_api_key
             SET last_used = NOW() AT TIME ZONE 'UTC',
-                usage_count = usage_count + 1 
+                usage_count = usage_count + 1
             WHERE id = %s
         """, [self.id])
         # Invalidate cache for these fields
@@ -135,7 +135,7 @@ class OdashboardApiKey(models.Model):
 
     def is_model_allowed(self, model_name):
         """Check if access to a model is allowed for this API key.
-        
+
         Default keys have access to all models.
         Custom keys respect the allowed_models restriction.
         """
@@ -149,7 +149,7 @@ class OdashboardApiKey(models.Model):
     @api.model
     def get_or_create_default_key(self):
         """Get the default key, creating it if it doesn't exist.
-        
+
         Called by the sync process to ensure a default key exists.
         Returns the key record (use .key to get the actual key value).
         """
@@ -157,20 +157,20 @@ class OdashboardApiKey(models.Model):
             ('key_type', '=', 'default'),
             ('active', '=', True),
         ], limit=1)
-        
+
         if not default_key:
             default_key = self.sudo().create({
                 'name': 'ODashboard Default Key',
                 'key_type': 'default',
                 'user_id': False,  # No specific user
             })
-        
+
         return default_key
 
     @api.model
     def rotate_default_key(self):
         """Rotate the default key and return the new key value.
-        
+
         Called by ODashboard during sync. Creates the key if it doesn't exist.
         Returns the new API key string.
         """
