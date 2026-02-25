@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.odoo.com)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(xargs cat:*)"
+    ]
+  }
+}

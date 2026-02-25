@@ -5,7 +5,7 @@
         <field name="name">odashboard.api.key.list</field>
         <field name="model">odashboard.api.key</field>
         <field name="arch" type="xml">
-            <list string="API Keys" decoration-info="key_type == 'default'">
+            <tree string="API Keys" decoration-info="key_type == 'default'">
                 <field name="name"/>
                 <field name="key_type" widget="badge"
                        decoration-info="key_type == 'default'"
@@ -14,7 +14,7 @@
                 <field name="active" widget="boolean_toggle"/>
                 <field name="last_used"/>
                 <field name="usage_count"/>
-            </list>
+            </tree>
         </field>
     </record>
 
@@ -99,7 +99,7 @@
     <record id="action_odashboard_api_key" model="ir.actions.act_window">
         <field name="name">API Keys</field>
         <field name="res_model">odashboard.api.key</field>
-        <field name="view_mode">list,form</field>
+        <field name="view_mode">tree,form</field>
         <field name="context">{'default_key_type': 'custom'}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">

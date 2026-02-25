@@ -314,7 +314,7 @@ class ODashboardAction extends Component {
                 res_model: payload.model,
                 name: payload.name || payload.model,
                 domain: payload.domain || [],
-                views: [[false, "list"], [false, "form"]],
+                views: [[false, "tree"], [false, "form"]],
                 target: "current",
             });
         }
