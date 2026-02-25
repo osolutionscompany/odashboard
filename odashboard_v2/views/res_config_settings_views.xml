@@ -8,42 +8,42 @@
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
                 <app data-string="ODashboard" string="ODashboard" name="odashboard" logo="/odashboard_v2/static/description/icon.png">
-                    <block title="Connexion ODashboard" name="odashboard_connection">
-                        <setting string="URL de l'API" help="L'URL du serveur API ODashboard">
+                    <block title="ODashboard Connection" name="odashboard_connection">
+                        <setting string="API URL" help="The ODashboard API server URL">
                             <field name="odashboard_api_url" placeholder="https://api.odashboard.io"/>
                         </setting>
-                        <setting string="URL de l'application" help="L'URL de l'application web ODashboard">
+                        <setting string="App URL" help="The ODashboard web application URL">
                             <field name="odashboard_frontend_url" placeholder="https://app.odashboard.io"/>
                         </setting>
-                        <setting string="Clé d'instance" help="Copiez-la depuis les paramètres de votre instance ODashboard">
+                        <setting string="Instance Key" help="Copy it from your ODashboard instance settings">
                             <field name="odashboard_instance_key" password="True"/>
                         </setting>
-                        <setting string="État de la connexion">
+                        <setting string="Connection Status">
                             <field name="odashboard_sync_status" widget="badge"
                                    decoration-success="odashboard_sync_status == 'connected'"
                                    decoration-warning="odashboard_sync_status == 'pending'"
                                    decoration-muted="odashboard_sync_status == 'not_configured'"
                                    readonly="1"/>
                             <button name="action_odashboard_sync"
-                                    string="Synchroniser"
+                                    string="Synchronize"
                                     type="object"
                                     class="btn-primary ms-2"
                                     invisible="not odashboard_api_url or not odashboard_instance_key"/>
                         </setting>
                     </block>
 
-                    <block title="Zone de danger" name="odashboard_danger_zone"
+                    <block title="Danger Zone" name="odashboard_danger_zone"
                            invisible="not odashboard_instance_key and odashboard_sync_status == 'not_configured'">
-                        <setting string="Déconnecter ODashboard"
-                                 help="Supprime la clé d'instance et la clé API par défaut. La connexion avec ODashboard sera interrompue.">
+                        <setting string="Disconnect ODashboard"
+                                 help="Deletes the instance key and the default API key. The connection with ODashboard will be interrupted.">
                             <div class="text-muted mb-2">
-                                Cette action va supprimer la clé d'instance configurée ainsi que la clé API par défaut utilisée par ODashboard pour communiquer avec cette base Odoo. Vous devrez reconfigurer la connexion pour réutiliser ODashboard.
+                                This action will delete the configured instance key and the default API key used by ODashboard to communicate with this Odoo database. You will need to reconfigure the connection to use ODashboard again.
                             </div>
                             <button name="action_odashboard_disconnect"
-                                    string="Déconnecter"
+                                    string="Disconnect"
                                     type="object"
                                     class="btn-danger"
-                                    confirm="Êtes-vous sûr de vouloir déconnecter ODashboard ? La clé API par défaut sera supprimée."
+                                    confirm="Are you sure you want to disconnect ODashboard? The default API key will be deleted."
                                     invisible="not odashboard_instance_key"/>
                         </setting>
                     </block>
