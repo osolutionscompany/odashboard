@@ -27,8 +27,6 @@
         'web.assets_backend': [
             'odashboard_v2/static/src/css/odashboard_action.css',
             'odashboard_v2/static/src/js/odashboard_action.js',
-        ],
-        'web.assets_qweb': [
             'odashboard_v2/static/src/xml/odashboard_action.xml',
         ],
     },
