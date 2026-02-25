@@ -1,8 +1,8 @@
+/** @odoo-module **/
+
 import { Component, useState, onWillStart, onMounted, onWillUnmount, useRef } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
-import { rpc } from "@web/core/network/rpc";
-import { cookie } from "@web/core/browser/cookie";
 
 /**
  * ODashboard Client Action
@@ -36,12 +36,12 @@ const IFRAME_POST_LOAD_TIMEOUT = 2000;
 const IFRAME_MAX_TIMEOUT = 15000;
 
 class ODashboardAction extends Component {
-    static template = "odashboard.ODashboardAction";
-    static props = ["*"];
 
     setup() {
         this.action = useService("action");
         this.companyService = useService("company");
+        this.rpc = useService("rpc");
+        this.cookie = useService("cookie");
         this.iframeRef = useRef("iframe");
         this._iframeLoadTimer = null;
         this._iframeAlive = false;
@@ -77,7 +77,7 @@ class ODashboardAction extends Component {
 
     async loadIframeToken() {
         try {
-            const result = await rpc("/odashboard/iframe-token", {});
+            const result = await this.rpc("/odashboard/iframe-token", {});
 
             if (result.error) {
                 if (result.error === "not_configured") {
@@ -256,7 +256,7 @@ class ODashboardAction extends Component {
             }
             const targetOrigin = this._frontendOrigin;
             try {
-                const result = await rpc("/odashboard/iframe-token", {});
+                const result = await this.rpc("/odashboard/iframe-token", {});
 
                 if (result.error || !result.token) {
                     iframe.contentWindow.postMessage({
@@ -326,7 +326,7 @@ class ODashboardAction extends Component {
      * @returns {number[]} Array of active company IDs
      */
     _getAllowedCompanyIds() {
-        // Primary: use the company service (available in Odoo 18+)
+        // Primary: use the company service
         try {
             const ids = this.companyService.activeCompanyIds;
             if (ids && ids.length) {
@@ -337,9 +337,9 @@ class ODashboardAction extends Component {
         }
 
         // Fallback: parse the cids cookie (format: "1-3-7")
-        const cids = cookie.get("cids");
+        const cids = this.cookie.current.cids;
         if (cids) {
-            return cids.split("-").map(Number).filter(Boolean);
+            return String(cids).split("-").map(Number).filter(Boolean);
         }
 
         // Last resort: current company only
@@ -379,5 +379,8 @@ class ODashboardAction extends Component {
         });
     }
 }
+
+ODashboardAction.template = "odashboard.ODashboardAction";
+ODashboardAction.props = ["*"];
 
 registry.category("actions").add("odashboard_iframe", ODashboardAction);
