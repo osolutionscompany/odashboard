@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import re
+import threading
 import time
 
 import psycopg2
@@ -11,6 +12,64 @@ from odoo import http
 from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# SIMPLE IN-MEMORY RATE LIMITER FOR API KEY AUTHENTICATION
+# =============================================================================
+# Tracks failed auth attempts per IP. Blocks IPs with too many failures
+# to prevent brute-force attacks and DB-hitting denial-of-service.
+
+class _AuthRateLimiter:
+    """Thread-safe in-memory rate limiter for failed API key auth attempts."""
+
+    def __init__(self, max_failures=20, window_seconds=60, block_seconds=300):
+        self._lock = threading.Lock()
+        self._failures = {}  # ip -> list of timestamps
+        self._blocked = {}   # ip -> unblock_time
+        self.max_failures = max_failures
+        self.window_seconds = window_seconds
+        self.block_seconds = block_seconds
+
+    def is_blocked(self, ip):
+        """Check if an IP is currently blocked."""
+        with self._lock:
+            unblock_time = self._blocked.get(ip)
+            if unblock_time:
+                if time.time() < unblock_time:
+                    return True
+                # Block expired
+                del self._blocked[ip]
+                self._failures.pop(ip, None)
+            return False
+
+    def record_failure(self, ip):
+        """Record a failed auth attempt. Returns True if IP is now blocked."""
+        now = time.time()
+        with self._lock:
+            timestamps = self._failures.get(ip, [])
+            # Remove old entries outside the window
+            cutoff = now - self.window_seconds
+            timestamps = [t for t in timestamps if t > cutoff]
+            timestamps.append(now)
+            self._failures[ip] = timestamps
+
+            if len(timestamps) >= self.max_failures:
+                self._blocked[ip] = now + self.block_seconds
+                _logger.warning(
+                    "API key auth: IP %s blocked for %ds after %d failed attempts",
+                    ip, self.block_seconds, len(timestamps),
+                )
+                return True
+            return False
+
+    def record_success(self, ip):
+        """Clear failure count on successful auth."""
+        with self._lock:
+            self._failures.pop(ip, None)
+
+
+_auth_limiter = _AuthRateLimiter()
 
 
 class QueryExecutionError(Exception):
@@ -187,13 +246,23 @@ class OdashboardController(http.Controller):
     def _authenticate(self):
         """Authenticate the request using Bearer token.
         
-        Looks up API keys in the odashboard.api.key model.
+        Looks up API keys by hash in the odashboard.api.key model.
         Both default (ODashboard-managed) and custom keys are supported.
+        Rate-limited: IPs with too many failed attempts are blocked.
         
         Returns:
             (key_record, None) on success - key_record is the odashboard.api.key record
             (None, error_response) on failure
         """
+        # Rate limiting: check if IP is blocked
+        client_ip = request.httprequest.environ.get(
+            'HTTP_X_FORWARDED_FOR', request.httprequest.remote_addr
+        )
+        if client_ip:
+            client_ip = client_ip.split(',')[0].strip()
+        if _auth_limiter.is_blocked(client_ip):
+            return None, self._error_response('Too many failed attempts. Try again later.', 429)
+
         auth_header = request.httprequest.headers.get('Authorization', '')
 
         if not auth_header.startswith('Bearer '):
@@ -201,15 +270,17 @@ class OdashboardController(http.Controller):
 
         api_key = auth_header[7:]  # Remove 'Bearer ' prefix
 
-        # Look up in odashboard.api.key model (includes both default and custom keys)
+        # Look up by hash (secure: raw key is never stored after creation)
         ApiKey = request.env['odashboard.api.key'].sudo()
-        key_record = ApiKey.search([('key', '=', api_key), ('active', '=', True)], limit=1)
+        key_record = ApiKey.authenticate_by_key(api_key)
 
         if key_record:
             # Usage tracking is handled by ODashboard API (in-memory + periodic flush)
             # so we don't write anything here — keeps endpoints readonly-compatible.
+            _auth_limiter.record_success(client_ip)
             return key_record, None
 
+        _auth_limiter.record_failure(client_ip)
         return None, self._error_response('Invalid API key', 401)
 
     def _json_response(self, data, status=200):
@@ -237,9 +308,9 @@ class OdashboardController(http.Controller):
         try:
             models_data = self._get_schema_data(api_key)
             return self._json_response({'models': models_data})
-        except Exception as e:
+        except Exception:
             _logger.exception("Error fetching schema")
-            return self._error_response(str(e), 500)
+            return self._error_response('Internal server error', 500)
 
     @http.route('/odashboard/query', type='http', auth='none', methods=['POST'], csrf=False, readonly=True)
     def execute_query(self):
@@ -273,9 +344,9 @@ class OdashboardController(http.Controller):
             # SQL error - return detailed info with 400 status
             _logger.warning(f"Query execution failed: {e.error_info.get('message')}")
             return self._json_response(e.error_info, status=400)
-        except Exception as e:
+        except Exception:
             _logger.exception("Error executing query")
-            return self._error_response(str(e), 500)
+            return self._error_response('Internal server error', 500)
 
     @http.route('/odashboard/query/batch', type='http', auth='none', methods=['POST'], csrf=False, readonly=True)
     def execute_query_batch(self):
@@ -332,9 +403,9 @@ class OdashboardController(http.Controller):
 
         except json.JSONDecodeError:
             return self._error_response('Invalid JSON body')
-        except Exception as e:
+        except Exception:
             _logger.exception("Error executing batch query")
-            return self._error_response(str(e), 500)
+            return self._error_response('Internal server error', 500)
 
     def _should_exclude_model(self, model_name, Model):
         """Check if a model should be completely excluded from schema.
@@ -580,10 +651,29 @@ class OdashboardController(http.Controller):
             'DO', 'COMMENT', 'LOAD', 'LISTEN', 'NOTIFY',
             'PREPARE', 'DEALLOCATE', 'IMPORT',
         ]
+        # Dangerous PostgreSQL functions that could bypass security controls.
+        # set_config: can disable statement_timeout or change session settings.
+        # pg_sleep: denial of service (even within timeout window).
+        # pg_read_file/pg_ls_dir/lo_import: filesystem access (requires superuser
+        # but blocked as defense-in-depth).
+        forbidden_functions = [
+            'SET_CONFIG',
+            'PG_SLEEP',
+            'PG_READ_FILE',
+            'PG_READ_BINARY_FILE',
+            'PG_LS_DIR',
+            'LO_IMPORT',
+            'LO_EXPORT',
+        ]
         # Build a single regex: (?<![A-Z_])KEYWORD(?![A-Z_])
         # This ensures the keyword is not part of a larger identifier.
         pattern = r'(?<![A-Z_])(?:' + '|'.join(forbidden) + r')(?![A-Z_])'
         if re.search(pattern, normalized):
+            return False
+
+        # Block dangerous PostgreSQL functions (called as function_name(...))
+        func_pattern = r'(?<![A-Z_])(?:' + '|'.join(forbidden_functions) + r')\s*\('
+        if re.search(func_pattern, normalized):
             return False
 
         # Also check multi-word keywords separately
@@ -811,9 +901,9 @@ class OdashboardController(http.Controller):
 
         except KeyError as ke:
             return self._error_response(f'Model not available: {ke!s}', 404)
-        except Exception as e:
+        except Exception:
             _logger.exception("Error searching records")
-            return self._error_response(str(e), 500)
+            return self._error_response('Internal server error', 500)
 
     # =========================================================================
     # USAGE TRACKING (called by ODashboard API periodically)
@@ -854,9 +944,9 @@ class OdashboardController(http.Controller):
 
         except json.JSONDecodeError:
             return self._error_response('Invalid JSON body')
-        except Exception as e:
+        except Exception:
             _logger.exception("Error reporting usage")
-            return self._error_response(str(e), 500)
+            return self._error_response('Internal server error', 500)
 
     # =========================================================================
     # API KEY ROTATION (called by ODashboard during sync)
@@ -896,14 +986,16 @@ class OdashboardController(http.Controller):
             if not hmac.compare_digest(instance_key, stored_instance_key):
                 return {'error': 'Invalid instance key'}
 
-            # If current_api_key provided, validate it (extra security for rotations)
+            # If current_api_key provided, validate it via hash (extra security for rotations)
             if current_api_key:
                 default_key = ApiKey.search([
                     ('key_type', '=', 'default'),
                     ('active', '=', True),
                 ], limit=1)
-                if default_key and not hmac.compare_digest(default_key.key, current_api_key):
-                    return {'error': 'Invalid current API key'}
+                if default_key:
+                    current_hash = ApiKey._hash_key(current_api_key)
+                    if not hmac.compare_digest(default_key.key_hash or '', current_hash):
+                        return {'error': 'Invalid current API key'}
 
             # Rotate the default API key using the model method
             new_api_key = ApiKey.rotate_default_key()
@@ -1036,6 +1128,7 @@ class OdashboardController(http.Controller):
                     'odoo_login': user.login or '',
                     'odoo_partner_id': odoo_partner_id,
                     'odoo_employee_id': odoo_employee_id,
+                    'lang': user.lang or '',
                     'timestamp': timestamp,
                     'signature': signature,
                 },
@@ -1043,6 +1136,6 @@ class OdashboardController(http.Controller):
                 'frontend_url': frontend_url.rstrip('/'),
             }
             
-        except Exception as e:
+        except Exception:
             _logger.exception("Error generating iframe token")
-            return {'error': str(e)}
+            return {'error': 'Internal server error'}

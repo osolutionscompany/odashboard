@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
 
-    <t t-name="odashboard.ODashboardAction">
+    <t t-name="odashboard_client.ODashboardAction">
         <div class="o_odashboard_action d-flex flex-column">
 
             <!-- Loading state -->
@@ -9,9 +9,9 @@
                 <div class="d-flex align-items-center justify-content-center flex-grow-1">
                     <div class="o_odashboard_loading">
                         <div class="spinner-border" role="status">
-                            <span class="visually-hidden">Loading...</span>
+                            <span class="visually-hidden">Chargement...</span>
                         </div>
-                        <p>Loading ODashboard...</p>
+                        <p>Chargement d'ODashboard...</p>
                     </div>
                 </div>
             </t>
@@ -23,29 +23,29 @@
                         <div class="o_odashboard_icon_circle setup">
                             <i class="fa fa-cogs"/>
                         </div>
-                        <h3>Configuration Required</h3>
+                        <h3>Configuration requise</h3>
                         <p class="o_odashboard_desc">
-                            ODashboard requires connection URLs to work.
-                            Please configure them in the settings.
+                            ODashboard nécessite les URLs de connexion pour fonctionner.
+                            Veuillez les renseigner dans les paramètres.
                         </p>
 
                         <t t-if="state.missingFields.length > 0">
                             <ul class="o_odashboard_missing_list">
                                 <li t-att-class="'o_odashboard_missing_item' + (state.missingFields.includes('api_url') ? '' : ' ok')">
                                     <i t-att-class="'fa ' + (state.missingFields.includes('api_url') ? 'fa-circle-o' : 'fa-check-circle')"/>
-                                    <span>API URL <t t-if="state.missingFields.includes('api_url')">&#8212; not configured</t></span>
+                                    <span>URL de l'API <t t-if="state.missingFields.includes('api_url')">&#8212; non renseignée</t></span>
                                 </li>
                                 <li t-att-class="'o_odashboard_missing_item' + (state.missingFields.includes('frontend_url') ? '' : ' ok')">
                                     <i t-att-class="'fa ' + (state.missingFields.includes('frontend_url') ? 'fa-circle-o' : 'fa-check-circle')"/>
-                                    <span>App URL <t t-if="state.missingFields.includes('frontend_url')">&#8212; not configured</t></span>
+                                    <span>URL de l'application <t t-if="state.missingFields.includes('frontend_url')">&#8212; non renseignée</t></span>
                                 </li>
                             </ul>
                         </t>
 
                         <div class="o_odashboard_actions">
                             <button class="btn btn-primary" t-on-click="onOpenSettings">
-                                <i class="fa fa-arrow-right me-2"/>Open Settings
-
+                                <i class="fa fa-arrow-right me-2"/>Ouvrir les paramètres
+                             
                             </button>
                         </div>
                     </div>
@@ -60,19 +60,19 @@
                             <div class="o_odashboard_icon_circle warning">
                                 <i class="fa fa-chain-broken"/>
                             </div>
-                            <h3>Unable to Communicate</h3>
+                            <h3>Communication impossible</h3>
                             <p class="o_odashboard_desc">
-                                The ODashboard application could not be loaded.
-                                This may be due to an incorrect App URL
-                                or a temporary network issue.
+                                L'application ODashboard n'a pas pu être chargée.
+                                Cela peut être dû à une URL d'application (App URL) incorrecte
+                                ou à un problème réseau temporaire.
                             </p>
 
                             <div class="o_odashboard_actions">
                                 <button class="btn btn-primary" t-on-click="onOpenSettings">
-                                    <i class="fa fa-cog me-2"/>Check Settings
+                                    <i class="fa fa-cog me-2"/>Vérifier les paramètres
                                 </button>
                                 <button class="btn btn-link" t-on-click="onRetry">
-                                    Retry Connection
+                                    Réessayer la connexion
                                 </button>
                             </div>
                         </div>
@@ -88,15 +88,15 @@
                             <div class="o_odashboard_icon_circle error">
                                 <i class="fa fa-exclamation-triangle"/>
                             </div>
-                            <h3>Unexpected Error</h3>
+                            <h3>Erreur inattendue</h3>
                             <p class="o_odashboard_desc" t-esc="state.errorMessage"/>
 
                             <div class="o_odashboard_actions">
                                 <button class="btn btn-primary" t-on-click="onRetry">
-                                    <i class="fa fa-refresh me-2"/>Retry
+                                    <i class="fa fa-refresh me-2"/>Réessayer
                                 </button>
                                 <button class="btn btn-link" t-on-click="onOpenSettings">
-                                    Open Settings
+                                    Ouvrir les paramètres
                                 </button>
                             </div>
                         </div>

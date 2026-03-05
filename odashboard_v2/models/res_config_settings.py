@@ -9,29 +9,29 @@ class ResConfigSettings(models.TransientModel):
 
     # ODashboard configuration
     odashboard_api_url = fields.Char(
-        string='ODashboard API URL',
+        string='URL de l\'API ODashboard',
         config_parameter='odashboard.api_url',
-        help='The ODashboard API server URL (e.g. https://api.odashboard.io)',
+        help='L\'URL du serveur API ODashboard (ex : https://api.odashboard.io)',
     )
     odashboard_frontend_url = fields.Char(
-        string='ODashboard App URL',
+        string='URL de l\'application ODashboard',
         config_parameter='odashboard.frontend_url',
-        help='The ODashboard web application URL (e.g. https://app.odashboard.io)',
+        help='L\'URL de l\'application web ODashboard (ex : https://app.odashboard.io)',
     )
     odashboard_instance_key = fields.Char(
-        string='Instance Key',
+        string='Clé d\'instance',
         config_parameter='odashboard.instance_key',
-        help='The ODashboard instance key. Copy it from your ODashboard instance settings.',
+        help='La clé d\'instance ODashboard. Copiez-la depuis les paramètres de votre instance.',
     )
     odashboard_sync_status = fields.Selection(
         selection=[
-            ('not_configured', 'Not Configured'),
-            ('pending', 'Pending'),
-            ('connected', 'Connected'),
+            ('not_configured', 'Non configuré'),
+            ('pending', 'En attente'),
+            ('connected', 'Connecté'),
         ],
-        string='Connection Status',
+        string='État de la connexion',
         compute='_compute_odashboard_sync_status',
-        help='Current connection status with ODashboard',
+        help='État actuel de la connexion avec ODashboard',
     )
 
     @api.depends('odashboard_api_url', 'odashboard_instance_key')
@@ -88,16 +88,16 @@ class ResConfigSettings(models.TransientModel):
         instance_key = ICP.get_param('odashboard.instance_key', default='')
 
         if not api_url:
-            raise UserError('Please configure the ODashboard API URL first.')
+            raise UserError('Veuillez d\'abord configurer l\'URL de l\'API ODashboard.')
         if not instance_key:
-            raise UserError('Please configure the instance key first.')
+            raise UserError('Veuillez d\'abord configurer la clé d\'instance.')
 
         # Normalize URLs
         api_url = api_url.rstrip('/')
         odoo_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
 
         if not odoo_url:
-            raise UserError('Unable to determine the Odoo base URL.')
+            raise UserError('Impossible de déterminer l\'URL de base Odoo.')
 
         try:
             # Call ODashboard sync endpoint
@@ -112,14 +112,14 @@ class ResConfigSettings(models.TransientModel):
             )
 
             if response.status_code == 401:
-                raise UserError('Invalid instance key. Please check your configuration.')
+                raise UserError('Clé d\'instance invalide. Vérifiez votre configuration.')
             elif response.status_code == 502:
                 # ODashboard tried to call us but failed — likely a network issue
                 data = response.json()
-                raise UserError(f'ODashboard could not reach Odoo: {data.get("detail", "Unknown error")}')
+                raise UserError(f'ODashboard n\'a pas pu se reconnecter à Odoo : {data.get("detail", "Erreur inconnue")}')
             elif response.status_code != 200:
                 data = response.json() if response.headers.get('content-type', '').startswith('application/json') else {}
-                raise UserError(f'Synchronization failed: {data.get("detail", response.text)}')
+                raise UserError(f'Échec de la synchronisation : {data.get("detail", response.text)}')
 
             # Store instance_identifier (public UUID) returned by the API.
             # This is used in iframe tokens to identify the instance without
@@ -137,8 +137,8 @@ class ResConfigSettings(models.TransientModel):
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
-                    'title': 'Synchronization Successful',
-                    'message': 'The connection with ODashboard has been established. Users and schema have been synchronized.',
+                    'title': 'Synchronisation réussie',
+                    'message': 'La connexion avec ODashboard a été établie. Les utilisateurs et le schéma ont été synchronisés.',
                     'type': 'success',
                     'sticky': False,
                     'next': {
@@ -149,11 +149,11 @@ class ResConfigSettings(models.TransientModel):
             }
 
         except requests.exceptions.Timeout:
-            raise UserError('The connection to ODashboard timed out. Please try again.')
+            raise UserError('La connexion à ODashboard a expiré. Veuillez réessayer.')
         except requests.exceptions.ConnectionError:
-            raise UserError(f'Unable to connect to ODashboard ({api_url}). Please check the URL.')
+            raise UserError(f'Impossible de se connecter à ODashboard ({api_url}). Vérifiez l\'URL.')
         except requests.exceptions.RequestException as e:
-            raise UserError(f'Connection error: {str(e)}')
+            raise UserError(f'Erreur de connexion : {str(e)}')
 
     def action_odashboard_disconnect(self):
         """Disconnect from ODashboard by clearing the instance key and deleting default API keys."""
@@ -180,8 +180,8 @@ class ResConfigSettings(models.TransientModel):
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
-                'title': 'ODashboard Disconnected',
-                'message': 'The instance key and default API key have been deleted.',
+                'title': 'ODashboard déconnecté',
+                'message': 'La clé d\'instance et la clé API par défaut ont été supprimées.',
                 'type': 'warning',
                 'sticky': False,
                 'next': {
