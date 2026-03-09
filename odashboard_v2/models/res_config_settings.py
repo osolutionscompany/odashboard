@@ -11,12 +11,14 @@ class ResConfigSettings(models.TransientModel):
     odashboard_api_url = fields.Char(
         string="O'Dashboard API URL",
         config_parameter='odashboard.api_url',
-        help="The O'Dashboard API server URL (e.g. https://api.odashboard.io)",
+        default='api.odashboard.app',
+        help="The O'Dashboard API server URL (e.g. https://api.odashboard.app)",
     )
     odashboard_frontend_url = fields.Char(
         string="O'Dashboard App URL",
         config_parameter='odashboard.frontend_url',
-        help="The O'Dashboard web application URL (e.g. https://app.odashboard.io)",
+        default='odashboard.app',
+        help="The O'Dashboard web application URL (e.g. https://odashboard.app)",
     )
     odashboard_instance_key = fields.Char(
         string='Instance Key',
