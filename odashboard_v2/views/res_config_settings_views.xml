@@ -7,15 +7,15 @@
         <field name="inherit_id" ref="base.res_config_settings_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
-                <app data-string="ODashboard" string="ODashboard" name="odashboard" logo="/odashboard_v2/static/description/icon.png">
-                    <block title="ODashboard Connection" name="odashboard_connection">
-                        <setting string="API URL" help="The ODashboard API server URL">
+                <app data-string="O'Dashboard" string="O'Dashboard" name="odashboard" logo="/odashboard_v2/static/description/icon.png">
+                    <block title="O'Dashboard Connection" name="odashboard_connection">
+                        <setting string="API URL" help="The O'Dashboard API server URL">
                             <field name="odashboard_api_url" placeholder="https://api.odashboard.io"/>
                         </setting>
-                        <setting string="App URL" help="The ODashboard web application URL">
+                        <setting string="App URL" help="The O'Dashboard web application URL">
                             <field name="odashboard_frontend_url" placeholder="https://app.odashboard.io"/>
                         </setting>
-                        <setting string="Instance Key" help="Copy it from your ODashboard instance settings">
+                        <setting string="Instance Key" help="Copy it from your O'Dashboard instance settings">
                             <field name="odashboard_instance_key" password="True"/>
                         </setting>
                         <setting string="Connection Status">
@@ -34,16 +34,16 @@
 
                     <block title="Danger Zone" name="odashboard_danger_zone"
                            invisible="not odashboard_instance_key and odashboard_sync_status == 'not_configured'">
-                        <setting string="Disconnect ODashboard"
-                                 help="Deletes the instance key and the default API key. The connection with ODashboard will be interrupted.">
+                        <setting string="Disconnect O'Dashboard"
+                                 help="Removes the instance key and the default API key. The connection with O'Dashboard will be interrupted.">
                             <div class="text-muted mb-2">
-                                This action will delete the configured instance key and the default API key used by ODashboard to communicate with this Odoo database. You will need to reconfigure the connection to use ODashboard again.
+                                This action will remove the configured instance key and the default API key used by O'Dashboard to communicate with this Odoo database. You will need to reconfigure the connection to use O'Dashboard again.
                             </div>
                             <button name="action_odashboard_disconnect"
                                     string="Disconnect"
                                     type="object"
                                     class="btn-danger"
-                                    confirm="Are you sure you want to disconnect ODashboard? The default API key will be deleted."
+                                    confirm="Are you sure you want to disconnect O'Dashboard? The default API key will be deleted."
                                     invisible="not odashboard_instance_key"/>
                         </setting>
                     </block>

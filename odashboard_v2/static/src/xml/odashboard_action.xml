@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
 
-    <t t-name="odashboard.ODashboardAction">
+    <t t-name="odashboard_client.ODashboardAction">
         <div class="o_odashboard_action d-flex flex-column">
 
             <!-- Loading state -->
@@ -11,7 +11,7 @@
                         <div class="spinner-border" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
-                        <p>Loading ODashboard...</p>
+                        <p>Loading O'Dashboard...</p>
                     </div>
                 </div>
             </t>
@@ -25,7 +25,7 @@
                         </div>
                         <h3>Configuration Required</h3>
                         <p class="o_odashboard_desc">
-                            ODashboard requires connection URLs to work.
+                            O'Dashboard requires connection URLs to function.
                             Please configure them in the settings.
                         </p>
 
@@ -45,7 +45,6 @@
                         <div class="o_odashboard_actions">
                             <button class="btn btn-primary" t-on-click="onOpenSettings">
                                 <i class="fa fa-arrow-right me-2"/>Open Settings
-
                             </button>
                         </div>
                     </div>
@@ -60,10 +59,10 @@
                             <div class="o_odashboard_icon_circle warning">
                                 <i class="fa fa-chain-broken"/>
                             </div>
-                            <h3>Unable to Communicate</h3>
+                            <h3>Communication Failed</h3>
                             <p class="o_odashboard_desc">
-                                The ODashboard application could not be loaded.
-                                This may be due to an incorrect App URL
+                                The O'Dashboard application could not be loaded.
+                                This may be caused by an incorrect App URL
                                 or a temporary network issue.
                             </p>
 
