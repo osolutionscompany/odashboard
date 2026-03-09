@@ -22,6 +22,7 @@
         'data/ir_config_parameter_data.xml',
 
         # Security
+        'security/odash_security.xml',
         'security/ir.model.access.csv',
         'security/ir_rules.xml',
 
