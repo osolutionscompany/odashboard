@@ -47,7 +47,7 @@
                         </div>
                         <div class="col-lg-6 o_setting_box">
                             <div class="o_setting_right_pane">
-                                <label string="Connection Status"/>
+                                <span class="o_form_label">Connection Status</span>
                                 <div class="mt8">
                                     <field name="odashboard_sync_status" widget="badge"
                                            decoration-success="odashboard_sync_status == 'connected'"
@@ -69,7 +69,7 @@
                          attrs="{'invisible': ['&amp;', ('odashboard_instance_key', '=', False), ('odashboard_sync_status', '=', 'not_configured')]}">
                         <div class="col-lg-6 o_setting_box">
                             <div class="o_setting_right_pane">
-                                <label string="Disconnect O'Dashboard"/>
+                                <span class="o_form_label">Disconnect O'Dashboard</span>
                                 <div class="text-muted">
                                     Removes the instance key and the default API key. The connection with O'Dashboard will be interrupted.
                                 </div>
