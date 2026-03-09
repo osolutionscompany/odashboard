@@ -9,42 +9,42 @@ _logger = logging.getLogger(__name__)
 
 class OdashboardApiKey(models.Model):
     _name = 'odashboard.api.key'
-    _description = 'Clé API ODashboard'
+    _description = "O'Dashboard API Key"
 
     _sql_constraints = [
-        ('key_hash_unique', 'unique(key_hash)', 'La clé API doit être unique !'),
+        ('key_hash_unique', 'unique(key_hash)', 'The API key must be unique!'),
     ]
 
-    name = fields.Char(string='Nom', required=True)
+    name = fields.Char(string='Name', required=True)
     # The raw key is stored temporarily at creation for display only.
     # After creation, the field is cleared and only the hash is kept.
-    key = fields.Char(string='Clé API (brute)', copy=False)
+    key = fields.Char(string='API Key (raw)', copy=False)
     # SHA-256 hash of the key — used for authentication lookups
-    key_hash = fields.Char(string='Hash de la clé', copy=False, index=True)
-    active = fields.Boolean(string='Actif', default=True)
-    user_id = fields.Many2one('res.users', string='Utilisateur', default=lambda self: self.env.user, ondelete='set null')
+    key_hash = fields.Char(string='Key Hash', copy=False, index=True)
+    active = fields.Boolean(string='Active', default=True)
+    user_id = fields.Many2one('res.users', string='User', default=lambda self: self.env.user, ondelete='set null')
 
     # Key type: default (managed by ODashboard) or custom (managed by admin)
     key_type = fields.Selection([
-        ('default', 'Par défaut (géré par ODashboard)'),
-        ('custom', 'Personnalisé'),
+        ('default', "Default (managed by O'Dashboard)"),
+        ('custom', 'Custom'),
     ], string='Type', default='custom', required=True)
 
     # Access control (only for custom keys)
     allowed_models = fields.Char(
-        string='Modèles autorisés',
-        help='Liste de noms de modèles séparés par des virgules. Laisser vide pour autoriser tous les modèles.'
+        string='Allowed Models',
+        help='Comma-separated list of model names. Leave empty to allow all models.'
     )
 
     # Audit
-    last_used = fields.Datetime(string='Dernière utilisation', readonly=True)
-    usage_count = fields.Integer(string='Nombre d\'utilisations', default=0, readonly=True)
+    last_used = fields.Datetime(string='Last Used', readonly=True)
+    usage_count = fields.Integer(string='Usage Count', default=0, readonly=True)
 
     # Computed field to hide key value for default type
     key_display = fields.Char(
-        string='Clé API',
+        string='API Key',
         compute='_compute_key_display',
-        help='La valeur de la clé API. Masquée pour les clés par défaut.'
+        help='The API key value. Hidden for default keys.'
     )
 
     @staticmethod
@@ -63,7 +63,7 @@ class OdashboardApiKey(models.Model):
                     ('id', '!=', record.id),
                 ])
                 if existing:
-                    raise ValidationError('Une seule clé API par défaut active est autorisée.')
+                    raise ValidationError('Only one active default API key is allowed.')
 
     def init(self):
         """Create partial unique index to enforce single active default key at DB level."""
@@ -82,11 +82,11 @@ class OdashboardApiKey(models.Model):
         for key_id, raw_key in rows:
             key_hash = self._hash_key(raw_key)
             self.env.cr.execute(
-                "UPDATE odashboard_api_key SET key_hash = %s WHERE id = %s",
+                "UPDATE odashboard_api_key SET key_hash = %s, key = NULL WHERE id = %s",
                 [key_hash, key_id]
             )
         if rows:
-            _logger.info("Migrated %d API key(s) to hashed storage", len(rows))
+            _logger.info("Migrated %d API key(s) to hashed storage (plaintext cleared)", len(rows))
         # Drop old unique constraint on 'key' column if it exists
         self.env.cr.execute("""
             DO $$ BEGIN
@@ -125,7 +125,7 @@ class OdashboardApiKey(models.Model):
             allowed_fields = {'last_used', 'usage_count', 'active'}
             if not set(vals.keys()).issubset(allowed_fields):
                 raise ValidationError(
-                    'Les clés API par défaut sont gérées par ODashboard et ne peuvent pas être modifiées.'
+                    "Default API keys are managed by O'Dashboard and cannot be modified."
                 )
         # If key is being updated, recompute hash
         if 'key' in vals and vals['key']:
@@ -136,7 +136,7 @@ class OdashboardApiKey(models.Model):
         """Prevent deletion of default keys (except by sudo)."""
         if not self.env.su and any(rec.key_type == 'default' for rec in self):
             raise ValidationError(
-                'Les clés API par défaut sont gérées par ODashboard et ne peuvent pas être supprimées.'
+                "Default API keys are managed by O'Dashboard and cannot be deleted."
             )
         return super().unlink()
 
@@ -149,34 +149,19 @@ class OdashboardApiKey(models.Model):
         self.ensure_one()
         if self.key_type == 'default':
             raise ValidationError(
-                'Les clés API par défaut sont gérées par ODashboard et ne peuvent pas être régénérées manuellement.'
+                "Default API keys are managed by O'Dashboard and cannot be regenerated manually."
             )
         self.key = self._generate_api_key()
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
-                'title': 'Clé API régénérée',
-                'message': 'La clé API a été régénérée. Veuillez mettre à jour votre configuration.',
+                'title': 'API Key Regenerated',
+                'message': 'The API key has been regenerated. Please update your configuration.',
                 'type': 'warning',
                 'sticky': False,
             }
         }
-
-    def _update_usage(self):
-        """Update last_used timestamp and increment usage count atomically.
-        
-        Uses raw SQL to ensure atomic increment of usage_count,
-        preventing race conditions under concurrent requests.
-        """
-        self.env.cr.execute("""
-            UPDATE odashboard_api_key 
-            SET last_used = NOW() AT TIME ZONE 'UTC',
-                usage_count = usage_count + 1 
-            WHERE id = %s
-        """, [self.id])
-        # Invalidate cache for these fields
-        self.invalidate_recordset(['last_used', 'usage_count'])
 
     def is_model_allowed(self, model_name):
         """Check if access to a model is allowed for this API key.
@@ -205,7 +190,7 @@ class OdashboardApiKey(models.Model):
         
         if not default_key:
             default_key = self.sudo().create({
-                'name': 'ODashboard Default Key',
+                'name': "O'Dashboard Default Key",
                 'key_type': 'default',
                 'user_id': False,  # No specific user
             })

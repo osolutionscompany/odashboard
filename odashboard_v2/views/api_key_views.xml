@@ -5,7 +5,7 @@
         <field name="name">odashboard.api.key.list</field>
         <field name="model">odashboard.api.key</field>
         <field name="arch" type="xml">
-            <list string="Clés API" decoration-info="key_type == 'default'">
+            <list string="API Keys" decoration-info="key_type == 'default'">
                 <field name="name"/>
                 <field name="key_type" widget="badge" 
                        decoration-info="key_type == 'default'" 
@@ -23,28 +23,28 @@
         <field name="name">odashboard.api.key.form</field>
         <field name="model">odashboard.api.key</field>
         <field name="arch" type="xml">
-            <form string="Clé API">
+            <form string="API Key">
                 <header>
                     <button name="regenerate_key" 
-                            string="Régénérer la clé" 
+                            string="Regenerate Key" 
                             type="object" 
                             class="btn-secondary" 
                             invisible="key_type == 'default'"
-                            confirm="Êtes-vous sûr de vouloir régénérer cette clé API ? L'ancienne clé cessera de fonctionner immédiatement."/>
+                            confirm="Are you sure you want to regenerate this API key? The old key will stop working immediately."/>
                 </header>
                 <sheet>
                     <!-- Banner for default keys -->
                     <div class="alert alert-warning mb-3" role="alert" invisible="key_type != 'default'">
-                        <i class="fa fa-lock me-2"/>
-                        <strong>Ceci est la clé API par défaut gérée par ODashboard.</strong>
+                        <i class="fa fa-lock me-2" title="Lock"/>
+                        <strong>This is the default API key managed by O'Dashboard.</strong>
                         <br/>
-                        Cette clé est automatiquement créée et renouvelée lors de la synchronisation.
-                        Elle ne peut pas être modifiée ni consultée pour des raisons de sécurité.
+                        This key is automatically created and renewed during synchronization.
+                        It cannot be modified or viewed for security reasons.
                     </div>
                     
                     <div class="oe_title">
                         <h1>
-                            <field name="name" placeholder="Nom de la clé API" readonly="key_type == 'default'"/>
+                            <field name="name" placeholder="API Key Name" readonly="key_type == 'default'"/>
                         </h1>
                     </div>
                     
@@ -52,10 +52,10 @@
                         <group>
                             <field name="key_type" readonly="1" widget="badge"/>
                             <!-- Show masked key for default, real key for custom -->
-                            <field name="key_display" string="Clé API" 
+                            <field name="key_display" string="API Key" 
                                    widget="CopyClipboardChar" 
                                    invisible="key_type == 'default'"/>
-                            <field name="key_display" string="Clé API" 
+                            <field name="key_display" string="API Key" 
                                    invisible="key_type != 'default'"
                                    readonly="1"/>
                             <field name="active" readonly="key_type == 'default'"/>
@@ -68,22 +68,22 @@
                     </group>
                     
                     <!-- Access control — only for custom keys -->
-                    <group string="Contrôle d'accès" invisible="key_type == 'default'">
+                    <group string="Access Control" invisible="key_type == 'default'">
                         <field name="allowed_models" 
-                               placeholder="ex : sale.order,res.partner (laisser vide pour tout autoriser)"/>
+                               placeholder="e.g. sale.order,res.partner (leave empty to allow all)"/>
                     </group>
                     
                     <!-- Usage instructions — only for custom keys -->
-                    <group string="Instructions d'utilisation" invisible="key_type == 'default'">
+                    <group string="Usage Instructions" invisible="key_type == 'default'">
                         <div class="alert alert-info" role="alert">
-                            <p><strong>Comment utiliser cette clé API :</strong></p>
-                            <p>Ajoutez l'en-tête suivant à vos requêtes HTTP :</p>
-                            <code>Authorization: Bearer VOTRE_CLE_API</code>
+                            <p><strong>How to use this API key:</strong></p>
+                            <p>Add the following header to your HTTP requests:</p>
+                            <code>Authorization: Bearer YOUR_API_KEY</code>
                             <br/><br/>
-                            <p><strong>Endpoints disponibles :</strong></p>
+                            <p><strong>Available endpoints:</strong></p>
                             <ul>
-                                <li><code>GET /odashboard/schema</code> — Obtenir le schéma de la base de données</li>
-                                <li><code>POST /odashboard/query</code> — Exécuter des requêtes SELECT</li>
+                                <li><code>GET /odashboard/schema</code> — Get the database schema</li>
+                                <li><code>POST /odashboard/query</code> — Execute SELECT queries</li>
                             </ul>
                         </div>
                     </group>
@@ -97,40 +97,40 @@
 
     <!-- Action -->
     <record id="action_odashboard_api_key" model="ir.actions.act_window">
-        <field name="name">Clés API</field>
+        <field name="name">API Keys</field>
         <field name="res_model">odashboard.api.key</field>
         <field name="view_mode">list,form</field>
         <field name="context">{'default_key_type': 'custom'}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
-                Créez votre première clé API
+                Create your first API key
             </p>
             <p>
-                Les clés API sont utilisées pour authentifier les requêtes ODashboard.
+                API keys are used to authenticate O'Dashboard requests.
             </p>
             <p>
-                <strong>Clé par défaut :</strong> Gérée automatiquement par ODashboard lors de la synchronisation.
-                Elle ne peut être ni consultée ni modifiée.
+                <strong>Default key:</strong> Automatically managed by O'Dashboard during synchronization.
+                It cannot be viewed or modified.
             </p>
             <p>
-                <strong>Clés personnalisées :</strong> Créez des clés supplémentaires pour des utilisateurs
-                ou applications spécifiques, avec des restrictions de modèles optionnelles.
+                <strong>Custom keys:</strong> Create additional keys for specific users
+                or applications, with optional model restrictions.
             </p>
         </field>
     </record>
 
     <!-- Client Action: ODashboard Iframe -->
     <record id="action_odashboard_iframe" model="ir.actions.client">
-        <field name="name">ODashboard</field>
+        <field name="name">O'Dashboard</field>
         <field name="tag">odashboard_iframe</field>
     </record>
 
     <!-- Menu -->
     <menuitem id="menu_odashboard_root"
-              name="ODashboard"
+              name="O'Dashboard"
               sequence="100"
               action="action_odashboard_iframe"
-              web_icon="odashboard_client,static/description/icon.png"/>
+              web_icon="odashboard_v2,static/description/icon.png"/>
 
     <menuitem id="menu_odashboard_config"
               name="Configuration"
@@ -138,7 +138,7 @@
               sequence="90"/>
 
     <menuitem id="menu_odashboard_api_keys"
-              name="Clés API"
+              name="API Keys"
               parent="menu_odashboard_config"
               action="action_odashboard_api_key"
               sequence="10"/>

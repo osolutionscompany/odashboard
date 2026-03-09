@@ -240,8 +240,17 @@ HIDDEN_FIELDS = {
 
 MAX_BATCH_SIZE = 50
 
+# Module version — keep in sync with __manifest__.py.
+MODULE_VERSION = '2.0.0'
+
 
 class OdashboardController(http.Controller):
+
+    @http.route('/odashboard/version', type='http', auth='none', methods=['GET'], csrf=False, readonly=True)
+    def get_version(self):
+        """Return the module version. No authentication required."""
+        return self._json_response({'version': MODULE_VERSION})
+
 
     def _authenticate(self):
         """Authenticate the request using Bearer token.
@@ -255,11 +264,13 @@ class OdashboardController(http.Controller):
             (None, error_response) on failure
         """
         # Rate limiting: check if IP is blocked
-        client_ip = request.httprequest.environ.get(
-            'HTTP_X_FORWARDED_FOR', request.httprequest.remote_addr
-        )
-        if client_ip:
-            client_ip = client_ip.split(',')[0].strip()
+        forwarded_for = request.httprequest.environ.get('HTTP_X_FORWARDED_FOR')
+        if forwarded_for:
+            # Take the LAST IP — the one appended by the trusted reverse proxy.
+            # The first IP is client-controlled and spoofable.
+            client_ip = forwarded_for.split(',')[-1].strip()
+        else:
+            client_ip = request.httprequest.remote_addr
         if _auth_limiter.is_blocked(client_ip):
             return None, self._error_response('Too many failed attempts. Try again later.', 429)
 
@@ -342,7 +353,7 @@ class OdashboardController(http.Controller):
             return self._error_response('Invalid JSON body')
         except QueryExecutionError as e:
             # SQL error - return detailed info with 400 status
-            _logger.warning(f"Query execution failed: {e.error_info.get('message')}")
+            _logger.warning("Query execution failed: %s", e.error_info.get('message'))
             return self._json_response(e.error_info, status=400)
         except Exception:
             _logger.exception("Error executing query")
@@ -541,11 +552,6 @@ class OdashboardController(http.Controller):
                     # It's a related field like partner_id.name - the data is in another table
                     return None
 
-            # Skip one2many and many2many - they don't have a column in the table
-            # (the relation is stored on the other side or in a relation table)
-            if field.ttype in ('one2many', 'many2many'):
-                return None
-
             # Binary fields - include but hidden by default (large, rarely useful for queries)
             is_binary = field.ttype == 'binary'
 
@@ -580,6 +586,54 @@ class OdashboardController(http.Controller):
                     except KeyError:
                         info['relation_table'] = None
 
+            # Relation info for one2many fields (inverse relation)
+            if field.ttype == 'one2many':
+                comodel_name = getattr(field_obj, 'comodel_name', None) or field.relation
+                inverse_name = getattr(field_obj, 'inverse_name', None)
+                if comodel_name and inverse_name:
+                    try:
+                        RelModel = request.env[comodel_name]
+                        if not self._should_exclude_model(comodel_name, RelModel):
+                            info['relation'] = comodel_name
+                            info['relation_table'] = RelModel._table
+                            info['inverse_column'] = inverse_name
+                        else:
+                            info['relation'] = comodel_name
+                            info['relation_table'] = None
+                    except KeyError:
+                        info['relation'] = comodel_name
+                        info['relation_table'] = None
+                else:
+                    # Cannot resolve inverse metadata, skip this field
+                    return None
+
+            # Relation info for many2many fields (navigable via junction table)
+            if field.ttype == 'many2many':
+                comodel_name = getattr(field_obj, 'comodel_name', None) or field.relation
+                if comodel_name:
+                    try:
+                        RelModel = request.env[comodel_name]
+                        if not self._should_exclude_model(comodel_name, RelModel):
+                            info['relation'] = comodel_name
+                            info['relation_table'] = RelModel._table
+                            # Junction table metadata for building the double JOIN
+                            junction_table = getattr(field_obj, 'relation', None)
+                            column1 = getattr(field_obj, 'column1', None)
+                            column2 = getattr(field_obj, 'column2', None)
+                            if junction_table and column1 and column2:
+                                info['junction_table'] = junction_table
+                                info['junction_source_column'] = column1
+                                info['junction_target_column'] = column2
+                            else:
+                                # Cannot resolve junction metadata, skip this field
+                                return None
+                        else:
+                            info['relation'] = comodel_name
+                            info['relation_table'] = None
+                    except KeyError:
+                        info['relation'] = comodel_name
+                        info['relation_table'] = None
+
             # Selection options
             if field.ttype == 'selection':
                 try:
@@ -597,7 +651,7 @@ class OdashboardController(http.Controller):
             return info
 
         except Exception as e:
-            _logger.warning(f"Error getting field info for {model_name}.{field.name}: {e}")
+            _logger.warning("Error getting field info for %s.%s: %s", model_name, field.name, e)
             return None
 
     def _is_select_query(self, query):
@@ -664,6 +718,12 @@ class OdashboardController(http.Controller):
             'PG_LS_DIR',
             'LO_IMPORT',
             'LO_EXPORT',
+            'DBLINK',
+            'DBLINK_EXEC',
+            'DBLINK_CONNECT',
+            'PG_TERMINATE_BACKEND',
+            'PG_CANCEL_BACKEND',
+            'PG_STAT_FILE',
         ]
         # Build a single regex: (?<![A-Z_])KEYWORD(?![A-Z_])
         # This ensures the keyword is not part of a larger identifier.
@@ -674,6 +734,12 @@ class OdashboardController(http.Controller):
         # Block dangerous PostgreSQL functions (called as function_name(...))
         func_pattern = r'(?<![A-Z_])(?:' + '|'.join(forbidden_functions) + r')\s*\('
         if re.search(func_pattern, normalized):
+            return False
+
+        # Also block double-quoted function calls (e.g., "set_config"(...))
+        # which bypass the above pattern since the quote appears between name and paren.
+        quoted_func_pattern = r'"(?:' + '|'.join(forbidden_functions) + r')"\s*\('
+        if re.search(quoted_func_pattern, normalized):
             return False
 
         # Also check multi-word keywords separately
@@ -981,7 +1047,7 @@ class OdashboardController(http.Controller):
             # Validate instance_key
             stored_instance_key = ICP.get_param('odashboard.instance_key', default='')
             if not stored_instance_key:
-                return {'error': 'ODashboard is not configured on this Odoo instance'}
+                return {'error': "O'Dashboard is not configured on this Odoo instance"}
             
             if not hmac.compare_digest(instance_key, stored_instance_key):
                 return {'error': 'Invalid instance key'}
@@ -1006,6 +1072,58 @@ class OdashboardController(http.Controller):
         except Exception:
             _logger.exception("Error rotating API key")
             return {'error': 'Internal server error during key rotation'}
+
+    # =========================================================================
+    # DISCONNECT (called by ODashboard when rotating instance key)
+    # =========================================================================
+
+    @http.route('/odashboard/disconnect', type='json', auth='none', methods=['POST'], csrf=False)
+    def disconnect(self, instance_key=None, **kwargs):
+        """
+        Disconnect ODashboard from this Odoo instance.
+
+        Called by ODashboard backend before rotating the instance key.
+        Validates instance_key, then clears all local ODashboard state
+        (connected flag, instance_identifier, synced URL, default API keys).
+
+        JSON-RPC request params:
+            instance_key: str - The current instance key (for validation)
+
+        Returns:
+            {"status": "ok"} on success
+            {"error": "message"} on failure
+        """
+        try:
+            if not instance_key:
+                return {'error': 'instance_key is required'}
+
+            ICP = request.env['ir.config_parameter'].sudo()
+
+            stored_instance_key = ICP.get_param('odashboard.instance_key', default='')
+            if not stored_instance_key:
+                return {'error': "O'Dashboard is not configured on this Odoo instance"}
+
+            if not hmac.compare_digest(instance_key, stored_instance_key):
+                return {'error': 'Invalid instance key'}
+
+            # Clear all connection state
+            ICP.set_param('odashboard.instance_key', '')
+            ICP.set_param('odashboard.instance_identifier', '')
+            ICP.set_param('odashboard.synced_odoo_url', '')
+            ICP.set_param('odashboard.connected', '')
+
+            # Delete default API keys
+            ApiKey = request.env['odashboard.api.key'].sudo()
+            default_keys = ApiKey.search([('key_type', '=', 'default')])
+            if default_keys:
+                default_keys.unlink()
+
+            _logger.info("ODashboard disconnected via remote call")
+            return {'status': 'ok'}
+
+        except Exception:
+            _logger.exception("Error during ODashboard disconnect")
+            return {'error': 'Internal server error during disconnect'}
 
     # =========================================================================
     # IFRAME TOKEN GENERATION (for embedding dashboards)

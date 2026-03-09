@@ -131,7 +131,7 @@ class ODashboardAction extends Component {
             console.error("ODashboard: Failed to generate iframe token", e);
             this.state.errorType = "generic";
             this.state.errorMessage =
-                "Impossible de se connecter au serveur Odoo. Veuillez recharger la page.";
+                "Unable to connect to the Odoo server. Please reload the page.";
             this.state.loading = false;
         }
     }
