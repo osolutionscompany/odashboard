@@ -26,6 +26,7 @@
     'assets': {
         'web.assets_backend': [
             'odashboard_v2/static/src/js/odashboard_action.js',
+            'odashboard_v2/static/src/css/odashboard_action.css',
             'odashboard_v2/static/src/xml/odashboard_action.xml',
         ],
     },
