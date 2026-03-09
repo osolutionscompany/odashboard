@@ -7,7 +7,7 @@
         <field name="inherit_id" ref="base.res_config_settings_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//div[hasclass('settings')]" position="inside">
-                <div class="app_settings_block" data-string="O'Dashboard" string="O'Dashboard" data-key="odashboard">
+                <div class="app_settings_block" data-string="O'Dashboard" string="O'Dashboard" data-key="odashboard_v2">
                     <h2>O'Dashboard Connection</h2>
                     <div class="row mt16 o_settings_container">
                         <div class="col-lg-6 o_setting_box">
@@ -53,7 +53,7 @@
                                            decoration-success="odashboard_sync_status == 'connected'"
                                            decoration-warning="odashboard_sync_status == 'pending'"
                                            decoration-muted="odashboard_sync_status == 'not_configured'"
-                                           readonly="1"/>
+                                           attrs="{'readonly': True}"/>
                                     <button name="action_odashboard_sync"
                                             string="Synchronize"
                                             type="object"
