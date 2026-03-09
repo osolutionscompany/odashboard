@@ -7,45 +7,48 @@
         <field name="inherit_id" ref="base.res_config_settings_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//div[hasclass('settings')]" position="inside">
-                <div class="app_settings_block" data-string="ODashboard" string="ODashboard" data-key="odashboard_v2">
-
-                    <h2>ODashboard Connection</h2>
+                <div class="app_settings_block" data-string="O'Dashboard" string="O'Dashboard" data-key="odashboard">
+                    <h2>O'Dashboard Connection</h2>
                     <div class="row mt16 o_settings_container">
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
+                        <div class="col-lg-6 o_setting_box">
                             <div class="o_setting_right_pane">
-                                <label for="odashboard_api_url" string="API URL"/>
-                                <div class="text-muted">The ODashboard API server URL</div>
-                                <div class="content-group">
+                                <label for="odashboard_api_url"/>
+                                <div class="text-muted">
+                                    The O'Dashboard API server URL
+                                </div>
+                                <div class="mt8">
                                     <field name="odashboard_api_url" placeholder="https://api.odashboard.io"/>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
+                        <div class="col-lg-6 o_setting_box">
                             <div class="o_setting_right_pane">
-                                <label for="odashboard_frontend_url" string="App URL"/>
-                                <div class="text-muted">The ODashboard web application URL</div>
-                                <div class="content-group">
+                                <label for="odashboard_frontend_url"/>
+                                <div class="text-muted">
+                                    The O'Dashboard web application URL
+                                </div>
+                                <div class="mt8">
                                     <field name="odashboard_frontend_url" placeholder="https://app.odashboard.io"/>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
+                    </div>
+                    <div class="row mt16 o_settings_container">
+                        <div class="col-lg-6 o_setting_box">
                             <div class="o_setting_right_pane">
-                                <label for="odashboard_instance_key" string="Instance Key"/>
-                                <div class="text-muted">Copy it from your ODashboard instance settings</div>
-                                <div class="content-group">
+                                <label for="odashboard_instance_key"/>
+                                <div class="text-muted">
+                                    Copy it from your O'Dashboard instance settings
+                                </div>
+                                <div class="mt8">
                                     <field name="odashboard_instance_key" password="True"/>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
+                        <div class="col-lg-6 o_setting_box">
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Connection Status</span>
-                                <div class="content-group">
+                                <label string="Connection Status"/>
+                                <div class="mt8">
                                     <field name="odashboard_sync_status" widget="badge"
                                            decoration-success="odashboard_sync_status == 'connected'"
                                            decoration-warning="odashboard_sync_status == 'pending'"
@@ -62,27 +65,26 @@
                     </div>
 
                     <h2 attrs="{'invisible': ['&amp;', ('odashboard_instance_key', '=', False), ('odashboard_sync_status', '=', 'not_configured')]}">Danger Zone</h2>
-                    <div class="row mt16 o_settings_container" attrs="{'invisible': ['&amp;', ('odashboard_instance_key', '=', False), ('odashboard_sync_status', '=', 'not_configured')]}">
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
+                    <div class="row mt16 o_settings_container"
+                         attrs="{'invisible': ['&amp;', ('odashboard_instance_key', '=', False), ('odashboard_sync_status', '=', 'not_configured')]}">
+                        <div class="col-lg-6 o_setting_box">
                             <div class="o_setting_right_pane">
-                                <span class="o_form_label">Disconnect ODashboard</span>
-                                <div class="text-muted">Deletes the instance key and the default API key. The connection with ODashboard will be interrupted.</div>
-                                <div class="content-group">
-                                    <div class="text-muted mb-2">
-                                        This action will delete the configured instance key and the default API key used by ODashboard to communicate with this Odoo database. You will need to reconfigure the connection to use ODashboard again.
-                                    </div>
-                                    <button name="action_odashboard_disconnect"
-                                            string="Disconnect"
-                                            type="object"
-                                            class="btn-danger"
-                                            confirm="Are you sure you want to disconnect ODashboard? The default API key will be deleted."
-                                            attrs="{'invisible': [('odashboard_instance_key', '=', False)]}"/>
+                                <label string="Disconnect O'Dashboard"/>
+                                <div class="text-muted">
+                                    Removes the instance key and the default API key. The connection with O'Dashboard will be interrupted.
                                 </div>
+                                <div class="text-muted mb-2 mt8">
+                                    This action will remove the configured instance key and the default API key used by O'Dashboard to communicate with this Odoo database. You will need to reconfigure the connection to use O'Dashboard again.
+                                </div>
+                                <button name="action_odashboard_disconnect"
+                                        string="Disconnect"
+                                        type="object"
+                                        class="btn-danger"
+                                        confirm="Are you sure you want to disconnect O'Dashboard? The default API key will be deleted."
+                                        attrs="{'invisible': [('odashboard_instance_key', '=', False)]}"/>
                             </div>
                         </div>
                     </div>
-
                 </div>
             </xpath>
         </field>

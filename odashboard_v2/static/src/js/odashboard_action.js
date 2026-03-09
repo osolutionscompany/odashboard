@@ -21,9 +21,11 @@ import { useService } from "@web/core/utils/hooks";
  * postMessage protocol (iframe → parent):
  *   - odashboard-ready: iframe app loaded successfully
  *   - odashboard-reauth: request fresh HMAC token
+ *   - odashboard-reload: request full iframe reload (e.g. after logout)
  *   - odashboard-navigate: open an Odoo record/list
  *   - odashboard-open-settings: open Odoo Settings > ODashboard
  *   - odashboard-open-external: open a URL in a new browser tab
+ *   - odashboard-redirect: navigate the parent window to a URL (e.g. after iframe auth link flow)
  */
 
 // After the iframe fires its native `load` event, how long to wait for the
@@ -120,7 +122,7 @@ class ODashboardAction extends Component {
             token.company_ids = this._getAllowedCompanyIds();
 
             // Base64-encode the token object and construct the /load URL
-            const tokenB64 = btoa(JSON.stringify(token));
+            const tokenB64 = this._unicodeSafeB64Encode(JSON.stringify(token));
             this.state.iframeSrc = `${frontend_url}/load?token=${encodeURIComponent(tokenB64)}&iframe=1`;
             this.state.loading = false;
         } catch (e) {
@@ -248,6 +250,31 @@ class ODashboardAction extends Component {
             return;
         }
 
+        // Reload request (e.g. after logout in iframe)
+        if (type === "odashboard-reload") {
+            this.state.loading = true;
+            await this.loadIframeToken();
+            this._startIframeLoadCheck();
+            return;
+        }
+
+        // Redirect request (e.g. after account linking in iframe auth flow).
+        // The iframe sends a URL with a {{return_url}} placeholder (URL-encoded
+        // by URLSearchParams as %7B%7Breturn_url%7D%7D) — the parent replaces
+        // it with its own location so the auth pages know where to redirect
+        // back to after login/register.
+        if (type === "odashboard-redirect") {
+            let url = event.data.url;
+            if (url) {
+                url = url.replace(
+                    encodeURIComponent("{{return_url}}"),
+                    encodeURIComponent(window.location.href),
+                );
+                window.location.href = url;
+            }
+            return;
+        }
+
         // Re-authentication request
         if (type === "odashboard-reauth") {
             if (!this._frontendOrigin) {
@@ -268,7 +295,7 @@ class ODashboardAction extends Component {
 
                 // Inject fresh company IDs on re-auth too
                 result.token.company_ids = this._getAllowedCompanyIds();
-                const tokenB64 = btoa(JSON.stringify(result.token));
+                const tokenB64 = this._unicodeSafeB64Encode(JSON.stringify(result.token));
                 iframe.contentWindow.postMessage({
                     type: "odashboard-reauth-response",
                     token: tokenB64,
@@ -364,6 +391,21 @@ class ODashboardAction extends Component {
             target: "current",
             context: { module: "odashboard" },
         });
+    }
+
+    /**
+     * Base64-encode a string safely, handling Unicode characters.
+     * Standard btoa() throws on non-ASCII (e.g. accented names like "Élodie").
+     * @param {string} str
+     * @returns {string} Base64-encoded string
+     */
+    _unicodeSafeB64Encode(str) {
+        const bytes = new TextEncoder().encode(str);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
     }
 
     onRetry() {
