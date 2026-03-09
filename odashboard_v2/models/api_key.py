@@ -1,24 +1,32 @@
+import hashlib
+import logging
 import secrets
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
+_logger = logging.getLogger(__name__)
+
 
 class OdashboardApiKey(models.Model):
     _name = 'odashboard.api.key'
-    _description = 'ODashboard API Key'
+    _description = "O'Dashboard API Key"
 
     _sql_constraints = [
-        ('key_unique', 'unique(key)', 'The API key must be unique!'),
+        ('key_hash_unique', 'unique(key_hash)', 'The API key must be unique!'),
     ]
 
     name = fields.Char(string='Name', required=True)
-    key = fields.Char(string='API Key', copy=False)
+    # The raw key is stored temporarily at creation for display only.
+    # After creation, the field is cleared and only the hash is kept.
+    key = fields.Char(string='API Key (raw)', copy=False)
+    # SHA-256 hash of the key — used for authentication lookups
+    key_hash = fields.Char(string='Key Hash', copy=False, index=True)
     active = fields.Boolean(string='Active', default=True)
     user_id = fields.Many2one('res.users', string='User', default=lambda self: self.env.user, ondelete='set null')
 
     # Key type: default (managed by ODashboard) or custom (managed by admin)
     key_type = fields.Selection([
-        ('default', 'Default (managed by ODashboard)'),
+        ('default', "Default (managed by O'Dashboard)"),
         ('custom', 'Custom'),
     ], string='Type', default='custom', required=True)
 
@@ -38,6 +46,11 @@ class OdashboardApiKey(models.Model):
         compute='_compute_key_display',
         help='The API key value. Hidden for default keys.'
     )
+
+    @staticmethod
+    def _hash_key(raw_key):
+        """Compute SHA-256 hash of an API key for secure storage."""
+        return hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
 
     @api.constrains('key_type', 'active')
     def _check_unique_default(self):
@@ -59,6 +72,28 @@ class OdashboardApiKey(models.Model):
             ON odashboard_api_key (key_type)
             WHERE key_type = 'default' AND active = true
         """)
+        # Migrate existing plaintext keys to hashed storage.
+        # Any record with a key but no key_hash gets its hash computed.
+        self.env.cr.execute("""
+            SELECT id, key FROM odashboard_api_key
+            WHERE key IS NOT NULL AND key != '' AND (key_hash IS NULL OR key_hash = '')
+        """)
+        rows = self.env.cr.fetchall()
+        for key_id, raw_key in rows:
+            key_hash = self._hash_key(raw_key)
+            self.env.cr.execute(
+                "UPDATE odashboard_api_key SET key_hash = %s, key = NULL WHERE id = %s",
+                [key_hash, key_id]
+            )
+        if rows:
+            _logger.info("Migrated %d API key(s) to hashed storage (plaintext cleared)", len(rows))
+        # Drop old unique constraint on 'key' column if it exists
+        self.env.cr.execute("""
+            DO $$ BEGIN
+                ALTER TABLE odashboard_api_key DROP CONSTRAINT IF EXISTS odashboard_api_key_key_unique;
+            EXCEPTION WHEN undefined_object THEN NULL;
+            END $$;
+        """)
 
     @api.depends('key', 'key_type')
     def _compute_key_display(self):
@@ -74,7 +109,14 @@ class OdashboardApiKey(models.Model):
         for vals in vals_list:
             if not vals.get('key'):
                 vals['key'] = self._generate_api_key()
-        return super().create(vals_list)
+            # Compute hash from the raw key
+            vals['key_hash'] = self._hash_key(vals['key'])
+        records = super().create(vals_list)
+        # Clear raw key for default keys after creation (only hash is kept)
+        for record in records:
+            if record.key_type == 'default':
+                super(OdashboardApiKey, record).write({'key': False})
+        return records
 
     def write(self, vals):
         """Prevent modification of default keys (except by sudo)."""
@@ -83,15 +125,18 @@ class OdashboardApiKey(models.Model):
             allowed_fields = {'last_used', 'usage_count', 'active'}
             if not set(vals.keys()).issubset(allowed_fields):
                 raise ValidationError(
-                    'Default API keys are managed by ODashboard and cannot be modified.'
+                    "Default API keys are managed by O'Dashboard and cannot be modified."
                 )
+        # If key is being updated, recompute hash
+        if 'key' in vals and vals['key']:
+            vals['key_hash'] = self._hash_key(vals['key'])
         return super().write(vals)
 
     def unlink(self):
         """Prevent deletion of default keys (except by sudo)."""
         if not self.env.su and any(rec.key_type == 'default' for rec in self):
             raise ValidationError(
-                'Default API keys are managed by ODashboard and cannot be deleted.'
+                "Default API keys are managed by O'Dashboard and cannot be deleted."
             )
         return super().unlink()
 
@@ -104,7 +149,7 @@ class OdashboardApiKey(models.Model):
         self.ensure_one()
         if self.key_type == 'default':
             raise ValidationError(
-                'Default API keys are managed by ODashboard and cannot be regenerated manually.'
+                "Default API keys are managed by O'Dashboard and cannot be regenerated manually."
             )
         self.key = self._generate_api_key()
         return {
@@ -117,21 +162,6 @@ class OdashboardApiKey(models.Model):
                 'sticky': False,
             }
         }
-
-    def _update_usage(self):
-        """Update last_used timestamp and increment usage count atomically.
-
-        Uses raw SQL to ensure atomic increment of usage_count,
-        preventing race conditions under concurrent requests.
-        """
-        self.env.cr.execute("""
-            UPDATE odashboard_api_key
-            SET last_used = NOW() AT TIME ZONE 'UTC',
-                usage_count = usage_count + 1
-            WHERE id = %s
-        """, [self.id])
-        # Invalidate cache for these fields
-        self.invalidate_recordset(['last_used', 'usage_count'])
 
     def is_model_allowed(self, model_name):
         """Check if access to a model is allowed for this API key.
@@ -160,7 +190,7 @@ class OdashboardApiKey(models.Model):
 
         if not default_key:
             default_key = self.sudo().create({
-                'name': 'ODashboard Default Key',
+                'name': "O'Dashboard Default Key",
                 'key_type': 'default',
                 'user_id': False,  # No specific user
             })
@@ -172,9 +202,25 @@ class OdashboardApiKey(models.Model):
         """Rotate the default key and return the new key value.
 
         Called by ODashboard during sync. Creates the key if it doesn't exist.
-        Returns the new API key string.
+        Returns the new API key string (plaintext). The hash is stored in DB.
         """
         default_key = self.get_or_create_default_key()
         new_key = self._generate_api_key()
+        # Write key + hash (key is cleared after for default keys)
         default_key.sudo().write({'key': new_key})
+        # Clear raw key — only hash remains in DB
+        super(OdashboardApiKey, default_key.sudo()).write({'key': False})
         return new_key
+
+    @api.model
+    def authenticate_by_key(self, raw_key):
+        """Look up an API key by its hash for authentication.
+        
+        Returns the key record if found and active, otherwise False.
+        This is constant-time safe at the application level (hash comparison).
+        """
+        key_hash = self._hash_key(raw_key)
+        return self.sudo().search([
+            ('key_hash', '=', key_hash),
+            ('active', '=', True),
+        ], limit=1)
