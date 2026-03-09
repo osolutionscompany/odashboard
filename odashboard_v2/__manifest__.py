@@ -16,7 +16,7 @@
     """,
     'author': 'OSolutions',
     'website': 'https://osolutions.com',
-    'depends': ['base'],
+    'depends': ['base','web'],
     'data': [
         'security/ir.model.access.csv',
         'security/ir_rules.xml',
