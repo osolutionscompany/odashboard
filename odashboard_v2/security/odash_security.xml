@@ -14,6 +14,7 @@
     <record id="group_odashboard_user" model="res.groups">
         <field name="name">User</field>
         <field name="privilege_id" ref="privilege_odashboard_user"/>
+        <field name="implied_by_ids" eval="[Command.link(ref('base.group_system'))]"/>
     </record>
 
 </odoo>
