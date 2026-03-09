@@ -18,8 +18,14 @@
     'website': 'https://osolutions.com',
     'depends': ['base','web'],
     'data': [
+        # Data
+        'data/ir_config_parameter_data.xml',
+
+        # Security
         'security/ir.model.access.csv',
         'security/ir_rules.xml',
+
+        # Views
         'views/api_key_views.xml',
         'views/res_config_settings_views.xml',
     ],
