@@ -17,7 +17,7 @@
                                     The O'Dashboard API server URL
                                 </div>
                                 <div class="mt8">
-                                    <field name="odashboard_api_url" placeholder="https://api.odashboard.io"/>
+                                    <field name="odashboard_api_url" placeholder="https://api.odashboard.app"/>
                                 </div>
                             </div>
                         </div>
@@ -28,7 +28,7 @@
                                     The O'Dashboard web application URL
                                 </div>
                                 <div class="mt8">
-                                    <field name="odashboard_frontend_url" placeholder="https://app.odashboard.io"/>
+                                    <field name="odashboard_frontend_url" placeholder="https://app.odashboard.app"/>
                                 </div>
                             </div>
                         </div>

@@ -1155,8 +1155,8 @@ class OdashboardController(http.Controller):
                     "timestamp": "1234567890",
                     "signature": "abc123..."
                 },
-                "odashboard_url": "https://api.odashboard.io",
-                "frontend_url": "https://app.odashboard.io"
+                "odashboard_url": "https://api.odashboard.app",
+                "frontend_url": "https://app.odashboard.app"
             }
         """
         try:
