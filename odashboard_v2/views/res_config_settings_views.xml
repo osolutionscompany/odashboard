@@ -10,10 +10,10 @@
                 <app data-string="O'Dashboard" string="O'Dashboard" name="odashboard" logo="/odashboard_v2/static/description/icon.png">
                     <block title="O'Dashboard Connection" name="odashboard_connection">
                         <setting string="API URL" help="The O'Dashboard API server URL">
-                            <field name="odashboard_api_url" placeholder="https://api.odashboard.io"/>
+                            <field name="odashboard_api_url" placeholder="https://api.odashboard.app"/>
                         </setting>
                         <setting string="App URL" help="The O'Dashboard web application URL">
-                            <field name="odashboard_frontend_url" placeholder="https://app.odashboard.io"/>
+                            <field name="odashboard_frontend_url" placeholder="https://app.odashboard.app"/>
                         </setting>
                         <setting string="Instance Key" help="Copy it from your O'Dashboard instance settings">
                             <field name="odashboard_instance_key" password="True"/>
