@@ -1,6 +1,6 @@
 # Translation of Odoo Server.
 # This file contains the translation of the following modules:
-# 	* odashboard_v2
+# 	* odashboard
 #
 msgid ""
 msgstr ""
@@ -15,8 +15,8 @@ msgstr ""
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: \n"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid ""
 "<code>Authorization: Bearer YOUR_API_KEY</code>\n"
 "                            <br/><br/>"
@@ -24,18 +24,18 @@ msgstr ""
 "<code>Authorization: Bearer VOTRE_CLE_API</code>\n"
 "                            <br/><br/>"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid "<code>GET /odashboard/schema</code> — Get the database schema"
 msgstr "<code>GET /odashboard/schema</code> — Obtenir le schéma de la base de données"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid "<code>POST /odashboard/query</code> — Execute SELECT queries"
 msgstr "<code>POST /odashboard/query</code> — Exécuter des requêtes SELECT"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid ""
 "<i class=\"fa fa-lock me-2\" title=\"Lock\"/>\n"
 "                        <strong>This is the default API key managed by O'Dashboard.</strong>\n"
@@ -49,13 +49,13 @@ msgstr ""
 "                        Cette clé est automatiquement créée et renouvelée lors de la synchronisation.\n"
 "                        Elle ne peut pas être modifiée ni consultée pour des raisons de sécurité."
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid "<strong>Available endpoints:</strong>"
 msgstr "<strong>Points d'accès disponibles :</strong>"
 
-#. module: odashboard_v2
-#: model_terms:ir.actions.act_window,help:odashboard_v2.action_odashboard_api_key
+#. module: odashboard
+#: model_terms:ir.actions.act_window,help:odashboard.action_odashboard_api_key
 msgid ""
 "<strong>Custom keys:</strong> Create additional keys for specific users\n"
 "                or applications, with optional model restrictions."
@@ -63,8 +63,8 @@ msgstr ""
 "<strong>Clés personnalisées :</strong> Créez des clés supplémentaires pour des utilisateurs\n"
 "                ou applications spécifiques, avec des restrictions de modèles optionnelles."
 
-#. module: odashboard_v2
-#: model_terms:ir.actions.act_window,help:odashboard_v2.action_odashboard_api_key
+#. module: odashboard
+#: model_terms:ir.actions.act_window,help:odashboard.action_odashboard_api_key
 msgid ""
 "<strong>Default key:</strong> Automatically managed by O'Dashboard during synchronization.\n"
 "                It cannot be viewed or modified."
@@ -72,75 +72,75 @@ msgstr ""
 "<strong>Clé par défaut :</strong> Gérée automatiquement par O'Dashboard lors de la synchronisation.\n"
 "                Elle ne peut pas être consultée ni modifiée."
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid "<strong>How to use this API key:</strong>"
 msgstr "<strong>Comment utiliser cette clé API :</strong>"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_odashboard_api_key__key_display
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_odashboard_api_key__key_display
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid "API Key"
 msgstr "Clé API"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_odashboard_api_key__key
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_odashboard_api_key__key
 msgid "API Key (raw)"
 msgstr "Clé API (brute)"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid "API Key Name"
 msgstr "Nom de la clé API"
 
-#. module: odashboard_v2
-#: model:ir.actions.act_window,name:odashboard_v2.action_odashboard_api_key
-#: model:ir.ui.menu,name:odashboard_v2.menu_odashboard_api_keys
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_list
+#. module: odashboard
+#: model:ir.actions.act_window,name:odashboard.action_odashboard_api_key
+#: model:ir.ui.menu,name:odashboard.menu_odashboard_api_keys
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_list
 msgid "API Keys"
 msgstr "Clés API"
 
-#. module: odashboard_v2
+#. module: odashboard
 #. odoo-javascript
-#: code:addons/odashboard_v2/static/src/xml/odashboard_action.xml:0
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.res_config_settings_view_form_odashboard
+#: code:addons/odashboard/static/src/xml/odashboard_action.xml:0
+#: model_terms:ir.ui.view,arch_db:odashboard.res_config_settings_view_form_odashboard
 msgid "API URL"
 msgstr "URL de l'API"
 
-#. module: odashboard_v2
-#: model_terms:ir.actions.act_window,help:odashboard_v2.action_odashboard_api_key
+#. module: odashboard
+#: model_terms:ir.actions.act_window,help:odashboard.action_odashboard_api_key
 msgid "API keys are used to authenticate O'Dashboard requests."
 msgstr "Les clés API sont utilisées pour authentifier les requêtes O'Dashboard."
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid "Access Control"
 msgstr "Contrôle d'accès"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_odashboard_api_key__active
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_odashboard_api_key__active
 msgid "Active"
 msgstr "Actif"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid "Add the following header to your HTTP requests:"
 msgstr "Ajoutez l'en-tête suivant à vos requêtes HTTP :"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_odashboard_api_key__allowed_models
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_odashboard_api_key__allowed_models
 msgid "Allowed Models"
 msgstr "Modèles autorisés"
 
-#. module: odashboard_v2
+#. module: odashboard
 #. odoo-javascript
-#: code:addons/odashboard_v2/static/src/xml/odashboard_action.xml:0
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.res_config_settings_view_form_odashboard
+#: code:addons/odashboard/static/src/xml/odashboard_action.xml:0
+#: model_terms:ir.ui.view,arch_db:odashboard.res_config_settings_view_form_odashboard
 msgid "App URL"
 msgstr "URL de l'application"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.res_config_settings_view_form_odashboard
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.res_config_settings_view_form_odashboard
 msgid ""
 "Are you sure you want to disconnect O'Dashboard? The default API key will be"
 " deleted."
@@ -148,8 +148,8 @@ msgstr ""
 "Êtes-vous sûr de vouloir déconnecter O'Dashboard ? La clé API par défaut sera"
 " supprimée."
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.view_odashboard_api_key_form
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.view_odashboard_api_key_form
 msgid ""
 "Are you sure you want to regenerate this API key? The old key will stop "
 "working immediately."
@@ -157,114 +157,114 @@ msgstr ""
 "Êtes-vous sûr de vouloir régénérer cette clé API ? L'ancienne clé cessera "
 "de fonctionner immédiatement."
 
-#. module: odashboard_v2
+#. module: odashboard
 #. odoo-javascript
-#: code:addons/odashboard_v2/static/src/xml/odashboard_action.xml:0
+#: code:addons/odashboard/static/src/xml/odashboard_action.xml:0
 msgid "Check Settings"
 msgstr "Vérifier les paramètres"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,help:odashboard_v2.field_odashboard_api_key__allowed_models
+#. module: odashboard
+#: model:ir.model.fields,help:odashboard.field_odashboard_api_key__allowed_models
 msgid "Comma-separated list of model names. Leave empty to allow all models."
 msgstr "Liste de noms de modèles séparés par des virgules. Laissez vide pour autoriser tous les modèles."
 
-#. module: odashboard_v2
+#. module: odashboard
 #. odoo-javascript
-#: code:addons/odashboard_v2/static/src/xml/odashboard_action.xml:0
+#: code:addons/odashboard/static/src/xml/odashboard_action.xml:0
 msgid "Communication Failed"
 msgstr "Échec de la communication"
 
-#. module: odashboard_v2
-#: model:ir.model,name:odashboard_v2.model_res_config_settings
+#. module: odashboard
+#: model:ir.model,name:odashboard.model_res_config_settings
 msgid "Config Settings"
 msgstr "Paramètres de configuration"
 
-#. module: odashboard_v2
-#: model:ir.ui.menu,name:odashboard_v2.menu_odashboard_config
+#. module: odashboard
+#: model:ir.ui.menu,name:odashboard.menu_odashboard_config
 msgid "Configuration"
 msgstr "Configuration"
 
-#. module: odashboard_v2
+#. module: odashboard
 #. odoo-javascript
-#: code:addons/odashboard_v2/static/src/xml/odashboard_action.xml:0
+#: code:addons/odashboard/static/src/xml/odashboard_action.xml:0
 msgid "Configuration Required"
 msgstr "Configuration requise"
 
-#. module: odashboard_v2
-#: model:ir.model.fields.selection,name:odashboard_v2.selection__res_config_settings__odashboard_sync_status__connected
+#. module: odashboard
+#: model:ir.model.fields.selection,name:odashboard.selection__res_config_settings__odashboard_sync_status__connected
 msgid "Connected"
 msgstr "Connecté"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_res_config_settings__odashboard_sync_status
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.res_config_settings_view_form_odashboard
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_res_config_settings__odashboard_sync_status
+#: model_terms:ir.ui.view,arch_db:odashboard.res_config_settings_view_form_odashboard
 msgid "Connection Status"
 msgstr "Statut de connexion"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.res_config_settings_view_form_odashboard
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.res_config_settings_view_form_odashboard
 msgid "Copy it from your O'Dashboard instance settings"
 msgstr "Copiez-la depuis les paramètres de votre instance O'Dashboard"
 
-#. module: odashboard_v2
-#: model_terms:ir.actions.act_window,help:odashboard_v2.action_odashboard_api_key
+#. module: odashboard
+#: model_terms:ir.actions.act_window,help:odashboard.action_odashboard_api_key
 msgid "Create your first API key"
 msgstr "Créez votre première clé API"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_odashboard_api_key__create_uid
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_odashboard_api_key__create_uid
 msgid "Created by"
 msgstr "Créé par"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_odashboard_api_key__create_date
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_odashboard_api_key__create_date
 msgid "Created on"
 msgstr "Créé le"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,help:odashboard_v2.field_res_config_settings__odashboard_sync_status
+#. module: odashboard
+#: model:ir.model.fields,help:odashboard.field_res_config_settings__odashboard_sync_status
 msgid "Current connection status with O'Dashboard"
 msgstr "Statut de connexion actuel avec O'Dashboard"
 
-#. module: odashboard_v2
-#: model:ir.model.fields.selection,name:odashboard_v2.selection__odashboard_api_key__key_type__custom
+#. module: odashboard
+#: model:ir.model.fields.selection,name:odashboard.selection__odashboard_api_key__key_type__custom
 msgid "Custom"
 msgstr "Personnalisée"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.res_config_settings_view_form_odashboard
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.res_config_settings_view_form_odashboard
 msgid "Danger Zone"
 msgstr "Zone de danger"
 
-#. module: odashboard_v2
-#: model:ir.model.fields.selection,name:odashboard_v2.selection__odashboard_api_key__key_type__default
+#. module: odashboard
+#: model:ir.model.fields.selection,name:odashboard.selection__odashboard_api_key__key_type__default
 msgid "Default (managed by O'Dashboard)"
 msgstr "Par défaut (gérée par O'Dashboard)"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.res_config_settings_view_form_odashboard
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.res_config_settings_view_form_odashboard
 msgid "Disconnect"
 msgstr "Déconnecter"
 
-#. module: odashboard_v2
-#: model_terms:ir.ui.view,arch_db:odashboard_v2.res_config_settings_view_form_odashboard
+#. module: odashboard
+#: model_terms:ir.ui.view,arch_db:odashboard.res_config_settings_view_form_odashboard
 msgid "Disconnect O'Dashboard"
 msgstr "Déconnecter O'Dashboard"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_odashboard_api_key__display_name
-#: model:ir.model.fields,field_description:odashboard_v2.field_res_config_settings__display_name
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_odashboard_api_key__display_name
+#: model:ir.model.fields,field_description:odashboard.field_res_config_settings__display_name
 msgid "Display Name"
 msgstr "Nom d'affichage"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_odashboard_api_key__id
-#: model:ir.model.fields,field_description:odashboard_v2.field_res_config_settings__id
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_odashboard_api_key__id
+#: model:ir.model.fields,field_description:odashboard.field_res_config_settings__id
 msgid "ID"
 msgstr "ID"
 
-#. module: odashboard_v2
-#: model:ir.model.fields,field_description:odashboard_v2.field_res_config_settings__odashboard_instance_key
+#. module: odashboard
+#: model:ir.model.fields,field_description:odashboard.field_res_config_settings__odashboard_instance_key
 #: model_terms:ir.ui.view,arch_db:odashboard_v2.res_config_settings_view_form_odashboard
 msgid "Instance Key"
 msgstr "Clé d'instance"
