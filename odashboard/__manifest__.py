@@ -15,7 +15,7 @@
         Configure the connection in Settings > O'Dashboard.
     """,
     'author': 'OSolutions',
-    'website': 'https://osolutions.com',
+    'website': 'https://odashboard.app',
     'depends': ['base','web'],
     'data': [
         # Data
@@ -37,7 +37,7 @@
             'odashboard/static/src/xml/odashboard_action.xml',
         ],
     },
-    'license': 'LGPL-3',
+    'license': 'Other proprietary',
     'application': True,
     'installable': True,
     'auto_install': False,
