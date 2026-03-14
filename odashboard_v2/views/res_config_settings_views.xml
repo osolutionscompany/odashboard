@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_odashboard" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.odashboard</field>
+        <field name="model">res.config.settings</field>
+        <field name="priority">50</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="O'Dashboard" string="O'Dashboard" name="odashboard" logo="/odashboard_v2/static/description/icon.png">
+                    <block title="O'Dashboard Connection" name="odashboard_connection">
+                        <setting string="Instance Key" help="Copy it from your O'Dashboard instance settings">
+                            <field name="odashboard_instance_key" password="True"/>
+                        </setting>
+                        <setting string="Connection Status">
+                            <field name="odashboard_instance_key" invisible="True"/>
+                            <field name="odashboard_api_url" invisible="True"/>
+                            <field name="odashboard_sync_status" widget="badge"
+                                   decoration-success="odashboard_sync_status == 'connected'"
+                                   decoration-warning="odashboard_sync_status == 'pending'"
+                                   decoration-muted="odashboard_sync_status == 'not_configured'"
+                                   readonly="1"/>
+                            <button name="action_odashboard_sync"
+                                    string="Synchronize"
+                                    noSaveDialog="true"
+                                    type="object"
+                                    class="btn-primary ms-2"
+                                    invisible="not odashboard_api_url or not odashboard_instance_key"/>
+                        </setting>
+                    </block>
+
+                    <block title="Danger Zone" name="odashboard_danger_zone"
+                           invisible="not odashboard_instance_key and odashboard_sync_status == 'not_configured'">
+                        <setting string="Disconnect O'Dashboard"
+                                 help="Removes the instance key and the default API key. The connection with O'Dashboard will be interrupted.">
+                            <div class="text-muted mb-2">
+                                This action will remove the configured instance key and the default API key used by O'Dashboard to communicate with this Odoo database. You will need to reconfigure the connection to use O'Dashboard again.
+                            </div>
+                            <button name="action_odashboard_disconnect"
+                                    string="Disconnect"
+                                    type="object"
+                                    class="btn-danger"
+                                    confirm="Are you sure you want to disconnect O'Dashboard? The default API key will be deleted."
+                                    invisible="not odashboard_instance_key"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+</odoo>
