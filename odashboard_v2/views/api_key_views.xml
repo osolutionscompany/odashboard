@@ -34,31 +34,39 @@
                 </header>
                 <sheet>
                     <!-- Banner for default keys -->
-                    <div class="alert alert-warning mb-3" role="alert" attrs="{'invisible': [('key_type', '!=', 'default')]}">
+                    <div class="alert alert-warning mb-3" role="alert"
+                         attrs="{'invisible': [('key_type', '!=', 'default')]}">
                         <i class="fa fa-lock me-2" title="Lock"/>
-                        <strong>This is the default API key managed by O'Dashboard.</strong>
+                        <strong>This is the default API key managed by
+                            O'Dashboard.
+                        </strong>
                         <br/>
-                        This key is automatically created and renewed during synchronization.
+                        This key is automatically created and renewed during
+                        synchronization.
                         It cannot be modified or viewed for security reasons.
                     </div>
 
                     <div class="oe_title">
                         <h1>
-                            <field name="name" placeholder="API Key Name" attrs="{'readonly': [('key_type', '=', 'default')]}"/>
+                            <field name="name" placeholder="API Key Name"
+                                   attrs="{'readonly': [('key_type', '=', 'default')]}"/>
                         </h1>
                     </div>
 
                     <group>
                         <group>
-                            <field name="key_type" attrs="{'readonly': True}" widget="badge"/>
+                            <field name="key_type" attrs="{'readonly': True}"
+                                   widget="badge"/>
                             <!-- Show masked key for default, real key for custom -->
                             <field name="key_display" string="API Key"
                                    widget="CopyClipboardChar"
                                    attrs="{'invisible': [('key_type', '=', 'default')]}"/>
                             <field name="key_display" string="API Key"
                                    attrs="{'invisible': [('key_type', '!=', 'default')], 'readonly': True}"/>
-                            <field name="active" attrs="{'readonly': [('key_type', '=', 'default')]}"/>
-                            <field name="user_id" attrs="{'readonly': [('key_type', '=', 'default')]}"/>
+                            <field name="active"
+                                   attrs="{'readonly': [('key_type', '=', 'default')]}"/>
+                            <field name="user_id"
+                                   attrs="{'readonly': [('key_type', '=', 'default')]}"/>
                         </group>
                         <group>
                             <field name="last_used"/>
@@ -67,22 +75,37 @@
                     </group>
 
                     <!-- Access control — only for custom keys -->
-                    <group string="Access Control" attrs="{'invisible': [('key_type', '=', 'default')]}">
+                    <group string="Access Control"
+                           attrs="{'invisible': [('key_type', '=', 'default')]}">
                         <field name="allowed_models"
                                placeholder="e.g. sale.order,res.partner (leave empty to allow all)"/>
                     </group>
 
                     <!-- Usage instructions — only for custom keys -->
-                    <group string="Usage Instructions" attrs="{'invisible': [('key_type', '=', 'default')]}">
+                    <group string="Usage Instructions"
+                           attrs="{'invisible': [('key_type', '=', 'default')]}">
                         <div class="alert alert-info" role="alert">
-                            <p><strong>How to use this API key:</strong></p>
-                            <p>Add the following header to your HTTP requests:</p>
+                            <p>
+                                <strong>How to use this API key:</strong>
+                            </p>
+                            <p>Add the following header to your HTTP
+                                requests:
+                            </p>
                             <code>Authorization: Bearer YOUR_API_KEY</code>
-                            <br/><br/>
-                            <p><strong>Available endpoints:</strong></p>
+                            <br/>
+                            <br/>
+                            <p>
+                                <strong>Available endpoints:</strong>
+                            </p>
                             <ul>
-                                <li><code>GET /odashboard/schema</code> — Get the database schema</li>
-                                <li><code>POST /odashboard/query</code> — Execute SELECT queries</li>
+                                <li>
+                                    <code>GET /odashboard/schema</code>
+                                    — Get the database schema
+                                </li>
+                                <li>
+                                    <code>POST /odashboard/query</code>
+                                    — Execute SELECT queries
+                                </li>
                             </ul>
                         </div>
                     </group>
@@ -108,11 +131,13 @@
                 API keys are used to authenticate O'Dashboard requests.
             </p>
             <p>
-                <strong>Default key:</strong> Automatically managed by O'Dashboard during synchronization.
+                <strong>Default key:</strong>
+                Automatically managed by O'Dashboard during synchronization.
                 It cannot be viewed or modified.
             </p>
             <p>
-                <strong>Custom keys:</strong> Create additional keys for specific users
+                <strong>Custom keys:</strong>
+                Create additional keys for specific users
                 or applications, with optional model restrictions.
             </p>
         </field>
@@ -134,6 +159,7 @@
 
     <menuitem id="menu_odashboard_config"
               name="Configuration"
+              groups="base.group_system"
               parent="menu_odashboard_root"
               sequence="90"/>
 
