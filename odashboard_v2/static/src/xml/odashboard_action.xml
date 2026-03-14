@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="odashboard_client.ODashboardAction">
+        <div class="o_odashboard_action d-flex flex-column">
+
+            <!-- Loading state -->
+            <t t-if="state.loading">
+                <div class="d-flex align-items-center justify-content-center flex-grow-1">
+                    <div class="o_odashboard_loading">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p>Loading O'Dashboard...</p>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Not configured: api_url or frontend_url missing -->
+            <t t-elif="state.errorType === 'not_configured'">
+                <div class="d-flex align-items-center justify-content-center flex-grow-1 p-4">
+                    <div class="o_odashboard_status_card">
+                        <div class="o_odashboard_icon_circle setup">
+                            <i class="fa fa-cogs"/>
+                        </div>
+                        <h3>Configuration Required</h3>
+                        <p class="o_odashboard_desc">
+                            O'Dashboard requires connection URLs to function.
+                            Please configure them in the settings.
+                        </p>
+
+                        <t t-if="state.missingFields.length > 0">
+                            <ul class="o_odashboard_missing_list">
+                                <li t-att-class="'o_odashboard_missing_item' + (state.missingFields.includes('api_url') ? '' : ' ok')">
+                                    <i t-att-class="'fa ' + (state.missingFields.includes('api_url') ? 'fa-circle-o' : 'fa-check-circle')"/>
+                                    <span>API URL <t t-if="state.missingFields.includes('api_url')">&#8212; not configured</t></span>
+                                </li>
+                                <li t-att-class="'o_odashboard_missing_item' + (state.missingFields.includes('frontend_url') ? '' : ' ok')">
+                                    <i t-att-class="'fa ' + (state.missingFields.includes('frontend_url') ? 'fa-circle-o' : 'fa-check-circle')"/>
+                                    <span>App URL <t t-if="state.missingFields.includes('frontend_url')">&#8212; not configured</t></span>
+                                </li>
+                            </ul>
+                        </t>
+
+                        <div class="o_odashboard_actions">
+                            <button class="btn btn-primary" t-on-click="onOpenSettings">
+                                <i class="fa fa-arrow-right me-2"/>Open Settings
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Iframe failed to load (wrong app_url or network issue) -->
+            <t t-elif="state.errorType === 'iframe_error'">
+                <div class="d-flex align-items-center justify-content-center flex-grow-1 p-4">
+                    <div>
+                        <div class="o_odashboard_status_card">
+                            <div class="o_odashboard_icon_circle warning">
+                                <i class="fa fa-chain-broken"/>
+                            </div>
+                            <h3>Communication Failed</h3>
+                            <p class="o_odashboard_desc">
+                                The O'Dashboard application could not be loaded.
+                                This may be caused by an incorrect App URL
+                                or a temporary network issue.
+                            </p>
+
+                            <div class="o_odashboard_actions">
+                                <button class="btn btn-primary" t-on-click="onOpenSettings">
+                                    <i class="fa fa-cog me-2"/>Check Settings
+                                </button>
+                                <button class="btn btn-link" t-on-click="onRetry">
+                                    Retry Connection
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Generic error (unexpected) -->
+            <t t-elif="state.errorType === 'generic'">
+                <div class="d-flex align-items-center justify-content-center flex-grow-1 p-4">
+                    <div>
+                        <div class="o_odashboard_status_card">
+                            <div class="o_odashboard_icon_circle error">
+                                <i class="fa fa-exclamation-triangle"/>
+                            </div>
+                            <h3>Unexpected Error</h3>
+                            <p class="o_odashboard_desc" t-esc="state.errorMessage"/>
+
+                            <div class="o_odashboard_actions">
+                                <button class="btn btn-primary" t-on-click="onRetry">
+                                    <i class="fa fa-refresh me-2"/>Retry
+                                </button>
+                                <button class="btn btn-link" t-on-click="onOpenSettings">
+                                    Open Settings
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Iframe loaded successfully -->
+            <t t-else="">
+                <div style="border-top: 1px solid oklch(0.922 0 0); width: 100%;"/>
+                <iframe t-ref="iframe"
+                        t-att-src="state.iframeSrc"
+                        class="border-0 flex-grow-1"
+                        style="width: 100%; height: 100%;"
+                        allow="clipboard-write; clipboard-read"
+                        />
+            </t>
+        </div>
+    </t>
+
+</templates>
