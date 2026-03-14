@@ -9,7 +9,7 @@
         <field name="arch" type="xml">
             <xpath expr="//div[hasclass('settings')]" position="inside">
                 <div class="app_settings_block" data-string="O'Dashboard"
-                     string="O'Dashboard" data-key="odashboard_v2">
+                     string="O'Dashboard" data-key="odashboard">
                     <h2>O'Dashboard Connection</h2>
                     <div class="row mt16 o_settings_container">
                         <div class="col-lg-6 o_setting_box">

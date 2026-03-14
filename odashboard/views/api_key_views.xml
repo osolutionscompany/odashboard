@@ -154,8 +154,8 @@
               name="O'Dashboard"
               sequence="100"
               action="action_odashboard_iframe"
-              web_icon="odashboard_v2,static/description/icon.png"
-              groups="odashboard_v2.group_odashboard_user"/>
+              web_icon="odashboard,static/description/icon.png"
+              groups="odashboard.group_odashboard_user"/>
 
     <menuitem id="menu_odashboard_config"
               name="Configuration"
