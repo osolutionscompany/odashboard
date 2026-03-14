@@ -136,6 +136,7 @@
     <menuitem id="menu_odashboard_config"
               name="Configuration"
               parent="menu_odashboard_root"
+              groups="base.group_system"
               sequence="90"/>
 
     <menuitem id="menu_odashboard_api_keys"
