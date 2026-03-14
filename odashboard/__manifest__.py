@@ -42,7 +42,7 @@
         'static/description/icon.png',
         'static/description/youtube-link.png',
     ],
-    'license': 'Other proprietary',
+    'license': 'OPL-1',
     'application': True,
     'installable': True,
     'auto_install': False,
