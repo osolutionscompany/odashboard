@@ -104,6 +104,9 @@ class ResConfigSettings(models.TransientModel):
         """Trigger synchronization with ODashboard."""
         self.ensure_one()
 
+        # Automatically save the configuration settings first
+        self.set_values()
+
         ICP = self.env['ir.config_parameter'].sudo()
         api_url = ICP.get_param('odashboard.api_url', default='')
         instance_key = ICP.get_param('odashboard.instance_key', default='')
