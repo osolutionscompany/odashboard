@@ -16,7 +16,7 @@
     """,
     'author': 'OSolutions',
     'website': 'https://odashboard.app',
-    'depends': ['base','web'],
+    'depends': ['base', 'web'],
     'data': [
         # Data
         'data/ir_config_parameter_data.xml',
@@ -37,6 +37,11 @@
             'odashboard/static/src/xml/odashboard_action.xml',
         ],
     },
+    'images': [
+        'static/description/banner.png',
+        'static/description/icon.png',
+        'static/description/youtube-link.png',
+    ],
     'license': 'Other proprietary',
     'application': True,
     'installable': True,
