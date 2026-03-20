@@ -14,7 +14,7 @@
 
         Configure the connection in Settings > O'Dashboard.
     """,
-    'author': 'OSolutions',
+    'author': "O'Solutions Company",
     'website': 'https://odashboard.app',
     'depends': ['base', 'web'],
     'data': [
