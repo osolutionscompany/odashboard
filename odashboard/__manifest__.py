@@ -4,17 +4,17 @@
     'category': 'Technical',
     'summary': "Expose database schema and query endpoints for O'Dashboard",
     'description': """
-        This module exposes REST endpoints for O'Dashboard:
-        - GET /odashboard/schema - Returns database schema
-        - POST /odashboard/query - Executes SELECT queries
-        - POST /odashboard/rotate-api-key - Rotate API key (called by O'Dashboard)
+This module exposes REST endpoints for O'Dashboard:
+- GET /odashboard/schema - Returns database schema
+- POST /odashboard/query - Executes SELECT queries
+- POST /odashboard/rotate-api-key - Rotate API key (called by O'Dashboard)
 
-        Authentication is done via API keys (Bearer token) for schema/query endpoints.
-        The rotate-api-key endpoint uses instance_key authentication.
+Authentication is done via API keys (Bearer token) for schema/query endpoints.
+The rotate-api-key endpoint uses instance_key authentication.
 
-        Configure the connection in Settings > O'Dashboard.
+Configure the connection in Settings > O'Dashboard.
     """,
-    'author': 'OSolutions',
+    'author': "O'Solutions Company",
     'website': 'https://osolutions.com',
     'depends': ['base', 'web'],
     'data': [
