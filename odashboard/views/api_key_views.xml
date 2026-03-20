@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Tree View -->
+    <record id="view_odashboard_api_key_tree" model="ir.ui.view">
+        <field name="name">odashboard.api.key.tree</field>
+        <field name="model">odashboard.api.key</field>
+        <field name="arch" type="xml">
+            <tree string="API Keys" decoration-info="key_type == 'default'">
+                <field name="name"/>
+                <field name="key_type" widget="badge"
+                       decoration-info="key_type == 'default'"
+                       decoration-muted="key_type == 'custom'"/>
+                <field name="user_id"/>
+                <field name="active" widget="boolean_toggle"/>
+                <field name="last_used"/>
+                <field name="usage_count"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_odashboard_api_key_form" model="ir.ui.view">
+        <field name="name">odashboard.api.key.form</field>
+        <field name="model">odashboard.api.key</field>
+        <field name="arch" type="xml">
+            <form string="API Key">
+                <header>
+                    <button name="regenerate_key" 
+                            string="Regenerate Key" 
+                            type="object" 
+                            class="btn-secondary" 
+                            invisible="key_type == 'default'"
+                            confirm="Are you sure you want to regenerate this API key? The old key will stop working immediately."/>
+                </header>
+                <sheet>
+                    <!-- Banner for default keys -->
+                    <div class="alert alert-warning mb-3" role="alert" invisible="key_type != 'default'">
+                        <i class="fa fa-lock me-2" title="Lock"/>
+                        <strong>This is the default API key managed by O'Dashboard.</strong>
+                        <br/>
+                        This key is automatically created and renewed during synchronization.
+                        It cannot be modified or viewed for security reasons.
+                    </div>
+
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="API Key Name" readonly="key_type == 'default'"/>
+                        </h1>
+                    </div>
+
+                    <group>
+                        <group>
+                            <field name="key_type" readonly="1" widget="badge"/>
+                            <!-- Show masked key for default, real key for custom -->
+                            <field name="key_display" string="API Key" 
+                                   widget="CopyClipboardChar" 
+                                   invisible="key_type == 'default'"/>
+                            <field name="key_display" string="API Key" 
+                                   invisible="key_type != 'default'"
+                                   readonly="1"/>
+                            <field name="active" readonly="key_type == 'default'"/>
+                            <field name="user_id" readonly="key_type == 'default'"/>
+                        </group>
+                        <group>
+                            <field name="last_used"/>
+                            <field name="usage_count"/>
+                        </group>
+                    </group>
+
+                    <!-- Access control — only for custom keys -->
+                    <group string="Access Control" invisible="key_type == 'default'">
+                        <field name="allowed_models" 
+                               placeholder="e.g. sale.order,res.partner (leave empty to allow all)"/>
+                    </group>
+
+                    <!-- Usage instructions — only for custom keys -->
+                    <group string="Usage Instructions" invisible="key_type == 'default'">
+                        <div class="alert alert-info" role="alert">
+                            <p><strong>How to use this API key:</strong></p>
+                            <p>Add the following header to your HTTP requests:</p>
+                            <code>Authorization: Bearer YOUR_API_KEY</code>
+                            <br/><br/>
+                            <p><strong>Available endpoints:</strong></p>
+                            <ul>
+                                <li><code>GET /odashboard/schema</code> — Get the database schema</li>
+                                <li><code>POST /odashboard/query</code> — Execute SELECT queries</li>
+                            </ul>
+                        </div>
+                    </group>
+
+                    <!-- Hidden fields -->
+                    <field name="key" invisible="1"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_odashboard_api_key" model="ir.actions.act_window">
+        <field name="name">API Keys</field>
+        <field name="res_model">odashboard.api.key</field>
+        <field name="view_mode">tree,form</field>
+        <field name="context">{'default_key_type': 'custom'}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first API key
+            </p>
+            <p>
+                API keys are used to authenticate O'Dashboard requests.
+            </p>
+            <p>
+                <strong>Default key:</strong> Automatically managed by O'Dashboard during synchronization.
+                It cannot be viewed or modified.
+            </p>
+            <p>
+                <strong>Custom keys:</strong> Create additional keys for specific users
+                or applications, with optional model restrictions.
+            </p>
+        </field>
+    </record>
+
+    <!-- Client Action: ODashboard Iframe -->
+    <record id="action_odashboard_iframe" model="ir.actions.client">
+        <field name="name">O'Dashboard</field>
+        <field name="tag">odashboard_iframe</field>
+    </record>
+
+    <!-- Menu -->
+    <menuitem id="menu_odashboard_root"
+              name="O'Dashboard"
+              sequence="100"
+              action="action_odashboard_iframe"
+              web_icon="odashboard,static/description/icon.png"
+              groups="odashboard.group_odashboard_user"/>
+
+    <menuitem id="menu_odashboard_config"
+              name="Configuration"
+              parent="menu_odashboard_root"
+              groups="base.group_system"
+              sequence="90"/>
+
+    <menuitem id="menu_odashboard_api_keys"
+              name="API Keys"
+              parent="menu_odashboard_config"
+              action="action_odashboard_api_key"
+              sequence="10"/>
+</odoo>

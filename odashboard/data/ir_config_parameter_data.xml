@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <record id="odashboard_api_url" model="ir.config_parameter">
+        <field name="key">odashboard.api_url</field>
+        <field name="value">https://api.odashboard.app</field>
+    </record>
+
+    <record id="odashboard_frontend_url" model="ir.config_parameter">
+        <field name="key">odashboard.frontend_url</field>
+        <field name="value">https://odashboard.app</field>
+    </record>
+
+</odoo>
