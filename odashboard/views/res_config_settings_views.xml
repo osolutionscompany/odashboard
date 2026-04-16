@@ -43,7 +43,6 @@
                                     <button name="action_odashboard_sync"
                                             string="Synchronize"
                                             type="object"
-                                            noSaveDialog="true"
                                             class="btn-primary ms-2"
                                             attrs="{'invisible': ['|', ('odashboard_api_url', '=', False), ('odashboard_instance_key', '=', False)]}"/>
                                 </div>
