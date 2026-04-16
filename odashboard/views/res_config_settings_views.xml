@@ -20,7 +20,6 @@
                                    readonly="1"/>
                             <button name="action_odashboard_sync"
                                     string="Synchronize"
-                                    noSaveDialog="true"
                                     type="object"
                                     class="btn-primary ms-2"
                                     invisible="not odashboard_api_url or not odashboard_instance_key"/>
