@@ -101,20 +101,28 @@ class ResConfigSettings(models.TransientModel):
         return res
 
     def action_odashboard_sync(self):
-        """Trigger synchronization with ODashboard."""
+        """Trigger synchronization with ODashboard.
+
+        Reads values from the transient record (self) directly so that
+        unsaved form values are honored. Persists them via set_values()
+        so the ir.config_parameter table is up to date for later use.
+        """
         self.ensure_one()
 
-        # Automatically save the configuration settings first
-        self.set_values()
-
-        ICP = self.env['ir.config_parameter'].sudo()
-        api_url = ICP.get_param('odashboard.api_url', default='')
-        instance_key = ICP.get_param('odashboard.instance_key', default='')
+        # Read values from the form (may include unsaved changes)
+        api_url = (self.odashboard_api_url or '').strip()
+        instance_key = (self.odashboard_instance_key or '').strip()
 
         if not api_url:
             raise UserError("Please configure the O'Dashboard API URL first.")
         if not instance_key:
             raise UserError('Please configure the instance key first.')
+
+        # Persist the current form values to ir.config_parameter so that
+        # subsequent reads (e.g. in other methods or requests) see them.
+        self.set_values()
+
+        ICP = self.env['ir.config_parameter'].sudo()
 
         # Normalize URLs
         api_url = api_url.rstrip('/')
