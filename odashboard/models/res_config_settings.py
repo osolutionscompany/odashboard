@@ -131,6 +131,14 @@ class ResConfigSettings(models.TransientModel):
         if not odoo_url:
             raise UserError('Unable to determine the Odoo base URL.')
 
+        if not odoo_url.startswith('https://'):
+            raise UserError(
+                "Your Odoo base URL must use HTTPS for O'Dashboard synchronization to work.\n\n"
+                f"Current URL: {odoo_url}\n\n"
+                "Please update your web.base.url in Settings → Technical → System Parameters "
+                "to use https:// (e.g. https://yourdomain.com)."
+            )
+
         # Include instance_identifier if we have one from a previous sync.
         # This allows the backend to detect duplicated databases (e.g. staging
         # copied from prod) that inherited the same instance_key.
