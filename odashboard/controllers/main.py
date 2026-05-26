@@ -542,16 +542,6 @@ class OdashboardController(http.Controller):
             if getattr(field_obj, 'inherited_field', None) and field.name not in AUDIT_FIELDS:
                 return None
 
-            # Skip related fields that point to another model
-            # (they don't have their own column in the table)
-            related = getattr(field_obj, 'related', None)
-            if related and is_stored:
-                # Check if it's a cross-model related field
-                related_parts = related.split('.') if isinstance(related, str) else related
-                if len(related_parts) > 1:
-                    # It's a related field like partner_id.name - the data is in another table
-                    return None
-
             # Binary fields - include but hidden by default (large, rarely useful for queries)
             is_binary = field.ttype == 'binary'
 
