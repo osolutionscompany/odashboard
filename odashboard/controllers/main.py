@@ -8,7 +8,7 @@ import time
 
 import psycopg2
 
-from odoo import http
+from odoo import http, SUPERUSER_ID
 from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
@@ -943,8 +943,14 @@ class OdashboardController(http.Controller):
             if not model_record:
                 return self._error_response(f'Model not found: {model_name}', 404)
 
-            # Use name_search for efficient search (respects _rec_name)
-            Model = request.env[model_name].sudo()
+            # Use name_search for efficient search (respects _rec_name).
+            # Run as SUPERUSER_ID (not just .sudo()): the route is auth='none',
+            # so request.env.user is an empty recordset. .sudo() only sets su=True
+            # without binding a real user, so models that gate field access on
+            # self.env.user.has_group(...) (e.g. hr.employee.check_field_access_rights)
+            # crash on ensure_one(). with_user(SUPERUSER_ID) gives a real singleton
+            # user AND su=True, matching this module's trusted-API-key model.
+            Model = request.env[model_name].with_user(SUPERUSER_ID)
             results = Model.name_search(name=search_term, limit=limit)
 
             # name_search returns [(id, display_name), ...]
